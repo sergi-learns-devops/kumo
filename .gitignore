@@ -1,0 +1,44 @@
+# ─── Rust ─────────────────────────────────────────────
+/target/
+**/*.rs.bk
+*.pdb
+
+# ─── macOS ────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+
+# ─── Windows ──────────────────────────────────────────
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+Desktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ─── Linux ────────────────────────────────────────────
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ─── IDEs / Editors ──────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*.iml
+.project
+.classpath
+.settings/
+
+# ─── kumo specific ───────────────────────────────────
+/dist/

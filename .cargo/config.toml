@@ -1,0 +1,5 @@
+[build]
+# Optimize for size in release builds
+
+[term]
+color = "auto"
