@@ -44,8 +44,10 @@ test:
 install: release
 	@echo "Installing $(BINARY) to $(INSTALL_DIR)..."
 	@if [ -w "$(INSTALL_DIR)" ]; then \
+		rm -f $(INSTALL_DIR)/$(BINARY); \
 		cp target/release/$(BINARY) $(INSTALL_DIR)/$(BINARY); \
 	else \
+		sudo rm -f $(INSTALL_DIR)/$(BINARY); \
 		sudo cp target/release/$(BINARY) $(INSTALL_DIR)/$(BINARY); \
 	fi
 	@chmod +x $(INSTALL_DIR)/$(BINARY)

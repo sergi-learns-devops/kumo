@@ -27,6 +27,18 @@ pub struct CliArgs {
     #[arg(long = "family", short = 'f')]
     pub family: Option<String>,
 
+    /// Workload type: general, ai, sap, hpc, database, batch, storage
+    #[arg(long = "workload", short = 'w')]
+    pub workload: Option<String>,
+
+    /// Service type: vm or db (default: vm)
+    #[arg(long = "service")]
+    pub service: Option<String>,
+
+    /// Database engine (for --service db): postgres, mysql, sqlserver
+    #[arg(long = "engine")]
+    pub engine: Option<String>,
+
     /// List valid regions for a provider (usage: --list-regions gcp)
     #[arg(long = "list-regions")]
     pub list_regions: Option<String>,

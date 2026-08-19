@@ -18,6 +18,38 @@ impl fmt::Display for CloudProvider {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ServiceType {
+    Vm,
+    Database,
+}
+
+impl fmt::Display for ServiceType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ServiceType::Vm => write!(f, "Virtual Machine"),
+            ServiceType::Database => write!(f, "Managed Database"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DatabaseEngine {
+    PostgreSql,
+    MySql,
+    SqlServer,
+}
+
+impl fmt::Display for DatabaseEngine {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DatabaseEngine::PostgreSql => write!(f, "PostgreSQL"),
+            DatabaseEngine::MySql => write!(f, "MySQL"),
+            DatabaseEngine::SqlServer => write!(f, "SQL Server"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Environment {
     Production,
     PreProduction,
@@ -36,6 +68,31 @@ impl fmt::Display for Environment {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum WorkloadType {
+    General,
+    Ai,
+    Sap,
+    Hpc,
+    Database,
+    Batch,
+    Storage,
+}
+
+impl fmt::Display for WorkloadType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            WorkloadType::General => write!(f, "General purpose"),
+            WorkloadType::Ai => write!(f, "AI / ML"),
+            WorkloadType::Sap => write!(f, "SAP"),
+            WorkloadType::Hpc => write!(f, "HPC"),
+            WorkloadType::Database => write!(f, "Database"),
+            WorkloadType::Batch => write!(f, "Batch / CI-CD"),
+            WorkloadType::Storage => write!(f, "Storage-intensive"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct UserRequest {
     pub cloud: CloudProvider,
@@ -44,6 +101,9 @@ pub struct UserRequest {
     pub env: Environment,
     pub region: String,
     pub family: Option<String>,
+    pub workload: WorkloadType,
+    pub service: ServiceType,
+    pub db_engine: Option<DatabaseEngine>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

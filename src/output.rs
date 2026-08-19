@@ -1,4 +1,4 @@
-use crate::models::{Environment, Recommendation, UserRequest, CATALOG_META};
+use crate::models::{Environment, Recommendation, ServiceType, UserRequest, WorkloadType, CATALOG_META};
 use std::env;
 use std::time::Instant;
 
@@ -161,6 +161,14 @@ pub fn display(recommendation: &Recommendation, request: &UserRequest, start: In
 
     // Header
     println!();
+    let service_label = match request.service {
+        ServiceType::Vm => format!("{}", request.cloud),
+        ServiceType::Database => match request.cloud {
+            crate::models::CloudProvider::Gcp => "Cloud SQL".to_string(),
+            crate::models::CloudProvider::Aws => "RDS".to_string(),
+            crate::models::CloudProvider::Azure => "Azure Database".to_string(),
+        },
+    };
     println!(
         "  {}{} kumo{} — {}{}{} {}{}{}    {}",
         c.bold,
@@ -168,7 +176,7 @@ pub fn display(recommendation: &Recommendation, request: &UserRequest, start: In
         c.reset,
         c.bold,
         c.cyan,
-        request.cloud,
+        service_label,
         c.dim,
         request.region,
         c.reset,
@@ -184,8 +192,16 @@ pub fn display(recommendation: &Recommendation, request: &UserRequest, start: In
         "  {}Request:{} {}{}{} vCPUs │ {}{:.1}{} GB RAM",
         c.dim, c.reset, c.bold, fmt_vcpu(request.vcpus), c.reset, c.bold, request.ram_gb, c.reset
     );
+    if request.service == ServiceType::Database {
+        if let Some(engine) = &request.db_engine {
+            print!(" │ {}DB: {}{}", c.cyan, engine, c.reset);
+        }
+    }
     if let Some(ref family) = request.family {
         print!(" │ Family: {}{}{}", c.cyan, family, c.reset);
+    }
+    if request.workload != WorkloadType::General && request.service != ServiceType::Database {
+        print!(" │ {}{}{}", c.yellow, request.workload, c.reset);
     }
     println!();
 

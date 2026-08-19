@@ -1,14 +1,16 @@
 mod cli;
+mod db_catalog;
 mod interactive;
 mod models;
 mod output;
 mod pricing;
 mod providers;
 mod recommend;
+mod workloads;
 
 use clap::Parser;
 use cli::CliArgs;
-use models::{CloudProvider, Environment, UserRequest};
+use models::{CloudProvider, DatabaseEngine, Environment, ServiceType, UserRequest, WorkloadType};
 use providers::aws::AWS_REGIONS;
 use providers::azure::AZURE_REGIONS;
 use providers::gcp::GCP_REGIONS;
@@ -29,6 +31,36 @@ fn parse_env(s: &str) -> Option<Environment> {
         "pre-production" | "preprod" | "pre" | "staging" => Some(Environment::PreProduction),
         "test" | "testing" => Some(Environment::Test),
         "dev" | "development" => Some(Environment::Dev),
+        _ => None,
+    }
+}
+
+fn parse_workload(s: &str) -> Option<WorkloadType> {
+    match s.to_lowercase().as_str() {
+        "general" | "gp" | "standard" => Some(WorkloadType::General),
+        "ai" | "ml" | "gpu" => Some(WorkloadType::Ai),
+        "sap" | "hana" => Some(WorkloadType::Sap),
+        "hpc" | "compute" => Some(WorkloadType::Hpc),
+        "database" | "db" | "memory" => Some(WorkloadType::Database),
+        "batch" | "ci" | "cicd" | "ci-cd" => Some(WorkloadType::Batch),
+        "storage" | "io" | "disk" => Some(WorkloadType::Storage),
+        _ => None,
+    }
+}
+
+fn parse_service(s: &str) -> Option<ServiceType> {
+    match s.to_lowercase().as_str() {
+        "vm" | "compute" | "instance" => Some(ServiceType::Vm),
+        "db" | "database" | "sql" | "rds" | "cloudsql" => Some(ServiceType::Database),
+        _ => None,
+    }
+}
+
+fn parse_engine(s: &str) -> Option<DatabaseEngine> {
+    match s.to_lowercase().as_str() {
+        "postgres" | "postgresql" | "pg" => Some(DatabaseEngine::PostgreSql),
+        "mysql" | "maria" | "mariadb" => Some(DatabaseEngine::MySql),
+        "sqlserver" | "sql-server" | "mssql" => Some(DatabaseEngine::SqlServer),
         _ => None,
     }
 }
@@ -167,6 +199,38 @@ fn main() {
                 std::process::exit(1);
             });
 
+        let workload = if let Some(ref w) = args.workload {
+            parse_workload(w).unwrap_or_else(|| {
+                eprintln!("Error: invalid workload '{}'. Use: general, ai, sap, hpc, database, batch, storage.", w);
+                std::process::exit(1);
+            })
+        } else {
+            WorkloadType::General
+        };
+
+        let service = if let Some(ref s) = args.service {
+            parse_service(s).unwrap_or_else(|| {
+                eprintln!("Error: invalid service '{}'. Use: vm or db.", s);
+                std::process::exit(1);
+            })
+        } else {
+            ServiceType::Vm
+        };
+
+        let db_engine = if service == ServiceType::Database {
+            if let Some(ref e) = args.engine {
+                Some(parse_engine(e).unwrap_or_else(|| {
+                    eprintln!("Error: invalid engine '{}'. Use: postgres, mysql, or sqlserver.", e);
+                    std::process::exit(1);
+                }))
+            } else {
+                eprintln!("Error: --engine is required when --service db. Use: postgres, mysql, or sqlserver.");
+                std::process::exit(1);
+            }
+        } else {
+            None
+        };
+
         UserRequest {
             cloud,
             vcpus: vcpu,
@@ -174,6 +238,9 @@ fn main() {
             env,
             region,
             family: args.family,
+            workload,
+            service,
+            db_engine,
         }
     } else {
         // Missing args — interactive mode

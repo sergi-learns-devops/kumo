@@ -1,6 +1,6 @@
 use dialoguer::{Input, Select};
 
-use crate::models::{CloudProvider, Environment, UserRequest};
+use crate::models::{CloudProvider, DatabaseEngine, Environment, ServiceType, UserRequest, WorkloadType};
 use crate::providers::aws::AWS_REGIONS;
 use crate::providers::azure::AZURE_REGIONS;
 use crate::providers::gcp::GCP_REGIONS;
@@ -40,7 +40,48 @@ pub fn run_interactive() -> UserRequest {
         _ => CloudProvider::Azure,
     };
 
-    // 2. Environment (before region — influences mental model)
+    // 2. Service type
+    let service_items = &[
+        "Virtual Machine (Compute Engine / EC2 / Azure VM)",
+        "Managed Database (Cloud SQL / RDS / Azure Database)",
+    ];
+    let service_idx = Select::new()
+        .with_prompt("  Service type")
+        .items(service_items)
+        .default(0)
+        .interact()
+        .unwrap_or_else(|e| {
+            eprintln!("Error reading input: {}", e);
+            std::process::exit(1);
+        });
+
+    let service = match service_idx {
+        0 => ServiceType::Vm,
+        _ => ServiceType::Database,
+    };
+
+    // 2b. Database engine (only if service = Database)
+    let db_engine = if service == ServiceType::Database {
+        let engine_items = &["PostgreSQL", "MySQL", "SQL Server"];
+        let engine_idx = Select::new()
+            .with_prompt("  Database engine")
+            .items(engine_items)
+            .default(0)
+            .interact()
+            .unwrap_or_else(|e| {
+                eprintln!("Error reading input: {}", e);
+                std::process::exit(1);
+            });
+        Some(match engine_idx {
+            0 => DatabaseEngine::PostgreSql,
+            1 => DatabaseEngine::MySql,
+            _ => DatabaseEngine::SqlServer,
+        })
+    } else {
+        None
+    };
+
+    // 3. Environment (before region — influences mental model)
     let env_items = &["Production 🔴", "Pre-Production 🟡", "Test 🔵", "Dev 🟢"];
     let env_idx = Select::new()
         .with_prompt("  Target environment")
@@ -66,7 +107,41 @@ pub fn run_interactive() -> UserRequest {
     };
     println!("  \x1b[2m  → Will recommend: {}\x1b[0m", tier_hint);
 
-    // 3. Region (validated against provider)
+    // 3. Workload type (only for VMs)
+    let workload = if service == ServiceType::Vm {
+        let workload_items = &[
+            "General purpose (web, APIs, microservices)",
+            "AI / Machine Learning (GPU-accelerated)",
+            "SAP (certified, high-memory)",
+            "HPC (high-performance computing)",
+            "Databases (memory-optimized, high I/O)",
+            "Batch / CI-CD (cost-optimized, ephemeral)",
+            "Storage-intensive (high throughput, local NVMe)",
+        ];
+        let workload_idx = Select::new()
+            .with_prompt("  Workload type")
+            .items(workload_items)
+            .default(0)
+            .interact()
+            .unwrap_or_else(|e| {
+                eprintln!("Error reading input: {}", e);
+                std::process::exit(1);
+            });
+
+        match workload_idx {
+            0 => WorkloadType::General,
+            1 => WorkloadType::Ai,
+            2 => WorkloadType::Sap,
+            3 => WorkloadType::Hpc,
+            4 => WorkloadType::Database,
+            5 => WorkloadType::Batch,
+            _ => WorkloadType::Storage,
+        }
+    } else {
+        WorkloadType::General
+    };
+
+    // 4. Region (validated against provider)
     let valid_regions: &[&str] = match cloud {
         CloudProvider::Gcp => &GCP_REGIONS,
         CloudProvider::Aws => &AWS_REGIONS,
@@ -151,6 +226,9 @@ pub fn run_interactive() -> UserRequest {
         env,
         region,
         family: None,
+        workload,
+        service,
+        db_engine,
     }
 }
 

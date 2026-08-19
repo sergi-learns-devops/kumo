@@ -1,37 +1,57 @@
+use crate::db_catalog;
 use crate::models::*;
 use crate::pricing;
 use crate::providers::aws::AwsProvider;
 use crate::providers::azure::AzureProvider;
 use crate::providers::gcp::GcpProvider;
 use crate::providers::ProviderCatalog;
+use crate::workloads;
 
 pub fn recommend(request: &UserRequest) -> Recommendation {
-    // 1. Select catalog: prefer live pricing, fallback to embedded
-    let catalog: &'static [InstanceType] = match pricing::get_live_catalog(request.cloud) {
-        Some(live) if !live.is_empty() => live,
-        _ => match request.cloud {
-            CloudProvider::Gcp => GcpProvider::catalog(),
-            CloudProvider::Aws => AwsProvider::catalog(),
-            CloudProvider::Azure => AzureProvider::catalog(),
-        },
+    // 1. Select catalog based on service type
+    let catalog: &'static [InstanceType] = if request.service == ServiceType::Database {
+        // Use DB instance class catalog
+        let engine = request.db_engine.unwrap_or(DatabaseEngine::PostgreSql);
+        db_catalog::get_db_catalog(request.cloud, engine)
+    } else if request.workload != WorkloadType::General {
+        // Use specialized workload catalog
+        match workloads::get_workload_catalog(request.workload, request.cloud) {
+            Some(wl_catalog) => wl_catalog,
+            None => get_default_catalog(request),
+        }
+    } else {
+        get_default_catalog(request)
     };
 
     // 2. Filter by tier based on environment
-    let target_tier = match request.env {
-        Environment::Production | Environment::PreProduction => InstanceTier::Standard,
-        Environment::Test | Environment::Dev => InstanceTier::Economy,
+    let filtered: Vec<&'static InstanceType> = if request.service == ServiceType::Database || request.workload != WorkloadType::General {
+        // DB and specialized workloads: filter by tier normally
+        let target_tier = match request.env {
+            Environment::Production | Environment::PreProduction => InstanceTier::Standard,
+            Environment::Test | Environment::Dev => InstanceTier::Economy,
+        };
+        // For DB/workloads: if no economy tier available, use all
+        let tier_filtered: Vec<&'static InstanceType> = catalog.iter().filter(|i| i.tier == target_tier).collect();
+        if tier_filtered.is_empty() {
+            catalog.iter().collect()
+        } else {
+            tier_filtered
+        }
+    } else {
+        let target_tier = match request.env {
+            Environment::Production | Environment::PreProduction => InstanceTier::Standard,
+            Environment::Test | Environment::Dev => InstanceTier::Economy,
+        };
+        catalog.iter().filter(|i| i.tier == target_tier).collect()
     };
 
-    let mut filtered: Vec<&'static InstanceType> = catalog
-        .iter()
-        .filter(|i| i.tier == target_tier)
-        .collect();
-
     // 3. Filter by family if specified
-    if let Some(ref family) = request.family {
+    let filtered: Vec<&'static InstanceType> = if let Some(ref family) = request.family {
         let family_lower = family.to_lowercase();
-        filtered.retain(|i| i.family.to_lowercase() == family_lower);
-    }
+        filtered.into_iter().filter(|i| i.family.to_lowercase() == family_lower).collect()
+    } else {
+        filtered
+    };
 
     if filtered.is_empty() {
         return Recommendation {
@@ -103,6 +123,11 @@ pub fn recommend(request: &UserRequest) -> Recommendation {
 }
 
 fn build_custom(request: &UserRequest) -> Option<CustomMachine> {
+    // No custom machines for DB service or SAP workload
+    if request.service == ServiceType::Database || request.workload == WorkloadType::Sap {
+        return None;
+    }
+
     match request.cloud {
         CloudProvider::Gcp => {
             let vcpus_rounded = if request.vcpus < 1.0 {
@@ -131,22 +156,35 @@ fn build_custom(request: &UserRequest) -> Option<CustomMachine> {
 fn build_notes(request: &UserRequest) -> Vec<&'static str> {
     let mut notes = Vec::new();
 
-    match request.env {
-        Environment::Production => {
-            notes.push("Consider Committed Use Discounts (CUDs) for 1-3 year savings up to 57%.");
-        }
-        Environment::PreProduction => {
-            notes.push("Use Spot/Preemptible VMs for pre-production to save up to 80%.");
-            notes.push("Consider scheduling instance shutdowns outside business hours.");
-        }
-        Environment::Test => {
-            notes.push("Spot/Preemptible instances are ideal for test workloads.");
-            notes.push("Consider auto-shutdown policies to avoid idle costs.");
-        }
-        Environment::Dev => {
-            notes.push("Use Spot/Preemptible instances for maximum savings in dev.");
-            notes.push("Consider smaller instances with burstable performance.");
-            notes.push("Schedule auto-shutdown outside working hours for ~65% savings.");
+    // DB-specific notes
+    if request.service == ServiceType::Database {
+        let engine = request.db_engine.unwrap_or(DatabaseEngine::PostgreSql);
+        notes.extend(db_catalog::db_notes(request.cloud, engine));
+        return notes;
+    }
+
+    // Workload-specific notes
+    notes.extend(workloads::workload_notes(request.workload));
+
+    // Environment-specific notes (only if no workload notes or General)
+    if request.workload == WorkloadType::General {
+        match request.env {
+            Environment::Production => {
+                notes.push("Consider Committed Use Discounts (CUDs) for 1-3 year savings up to 57%.");
+            }
+            Environment::PreProduction => {
+                notes.push("Use Spot/Preemptible VMs for pre-production to save up to 80%.");
+                notes.push("Consider scheduling instance shutdowns outside business hours.");
+            }
+            Environment::Test => {
+                notes.push("Spot/Preemptible instances are ideal for test workloads.");
+                notes.push("Consider auto-shutdown policies to avoid idle costs.");
+            }
+            Environment::Dev => {
+                notes.push("Use Spot/Preemptible instances for maximum savings in dev.");
+                notes.push("Consider smaller instances with burstable performance.");
+                notes.push("Schedule auto-shutdown outside working hours for ~65% savings.");
+            }
         }
     }
 
@@ -159,6 +197,17 @@ fn build_notes(request: &UserRequest) -> Vec<&'static str> {
     }
 
     notes
+}
+
+fn get_default_catalog(request: &UserRequest) -> &'static [InstanceType] {
+    match pricing::get_live_catalog(request.cloud) {
+        Some(live) if !live.is_empty() => live,
+        _ => match request.cloud {
+            CloudProvider::Gcp => GcpProvider::catalog(),
+            CloudProvider::Aws => AwsProvider::catalog(),
+            CloudProvider::Azure => AzureProvider::catalog(),
+        },
+    }
 }
 
 /// Calculate Levenshtein distance between two strings (for did-you-mean)
@@ -232,6 +281,9 @@ mod tests {
                 CloudProvider::Azure => "eastus".to_string(),
             },
             family: None,
+            workload: WorkloadType::General,
+            service: ServiceType::Vm,
+            db_engine: None,
         }
     }
 
@@ -424,5 +476,120 @@ mod tests {
         let custom = rec.custom_option.unwrap();
         // Fractional vCPU should be rounded up to 1 for custom machine
         assert_eq!(custom.vcpus, 1.0);
+    }
+
+    #[test]
+    fn test_workload_ai_returns_gpu_instances() {
+        let mut req = make_request(CloudProvider::Aws, 8.0, 32.0, Environment::Production);
+        req.workload = WorkloadType::Ai;
+        let rec = recommend(&req);
+        assert!(!rec.closest_matches.is_empty());
+        // Should be from GPU families
+        let families: Vec<&str> = rec.closest_matches.iter().map(|s| s.instance.family).collect();
+        assert!(families.iter().any(|f| *f == "G5" || *f == "G4dn" || *f == "P4d"));
+    }
+
+    #[test]
+    fn test_workload_sap_returns_high_memory() {
+        let mut req = make_request(CloudProvider::Gcp, 96.0, 1400.0, Environment::Production);
+        req.workload = WorkloadType::Sap;
+        let rec = recommend(&req);
+        assert!(!rec.closest_matches.is_empty());
+        // SAP instances should have very high RAM
+        assert!(rec.closest_matches[0].instance.ram_gb >= 900.0);
+    }
+
+    #[test]
+    fn test_workload_hpc_gcp() {
+        let mut req = make_request(CloudProvider::Gcp, 30.0, 120.0, Environment::Production);
+        req.workload = WorkloadType::Hpc;
+        let rec = recommend(&req);
+        assert!(!rec.closest_matches.is_empty());
+        assert!(rec.closest_matches[0].instance.family == "C2");
+    }
+
+    #[test]
+    fn test_workload_database_memory_optimized() {
+        let mut req = make_request(CloudProvider::Aws, 8.0, 64.0, Environment::Production);
+        req.workload = WorkloadType::Database;
+        let rec = recommend(&req);
+        assert!(rec.exact_match.is_some());
+        assert_eq!(rec.exact_match.unwrap().family, "R6i");
+    }
+
+    #[test]
+    fn test_workload_general_still_uses_tiers() {
+        let req = make_request(CloudProvider::Gcp, 4.0, 16.0, Environment::Dev);
+        let rec = recommend(&req);
+        for scored in &rec.closest_matches {
+            assert_eq!(scored.instance.tier, InstanceTier::Economy);
+        }
+    }
+
+    #[test]
+    fn test_workload_notes_populated() {
+        let mut req = make_request(CloudProvider::Aws, 8.0, 32.0, Environment::Production);
+        req.workload = WorkloadType::Ai;
+        let rec = recommend(&req);
+        assert!(rec.notes.iter().any(|n| n.contains("GPU")));
+    }
+
+    #[test]
+    fn test_db_service_rds_postgres() {
+        let mut req = make_request(CloudProvider::Aws, 4.0, 16.0, Environment::Production);
+        req.service = ServiceType::Database;
+        req.db_engine = Some(DatabaseEngine::PostgreSql);
+        let rec = recommend(&req);
+        assert!(!rec.closest_matches.is_empty());
+        // Should recommend db.* instances
+        assert!(rec.closest_matches[0].instance.name.starts_with("db."));
+    }
+
+    #[test]
+    fn test_db_service_cloud_sql() {
+        let mut req = make_request(CloudProvider::Gcp, 4.0, 15.0, Environment::Production);
+        req.service = ServiceType::Database;
+        req.db_engine = Some(DatabaseEngine::MySql);
+        let rec = recommend(&req);
+        assert!(!rec.closest_matches.is_empty());
+        assert!(rec.closest_matches[0].instance.name.starts_with("db-"));
+    }
+
+    #[test]
+    fn test_db_service_azure() {
+        let mut req = make_request(CloudProvider::Azure, 4.0, 16.0, Environment::Production);
+        req.service = ServiceType::Database;
+        req.db_engine = Some(DatabaseEngine::PostgreSql);
+        let rec = recommend(&req);
+        assert!(!rec.closest_matches.is_empty());
+    }
+
+    #[test]
+    fn test_db_service_no_custom_machine() {
+        let mut req = make_request(CloudProvider::Gcp, 4.0, 16.0, Environment::Production);
+        req.service = ServiceType::Database;
+        req.db_engine = Some(DatabaseEngine::PostgreSql);
+        let rec = recommend(&req);
+        assert!(rec.custom_option.is_none());
+    }
+
+    #[test]
+    fn test_db_service_dev_uses_economy() {
+        let mut req = make_request(CloudProvider::Aws, 2.0, 4.0, Environment::Dev);
+        req.service = ServiceType::Database;
+        req.db_engine = Some(DatabaseEngine::MySql);
+        let rec = recommend(&req);
+        assert!(!rec.closest_matches.is_empty());
+        // Should prefer burstable/economy tier
+        assert_eq!(rec.closest_matches[0].instance.tier, InstanceTier::Economy);
+    }
+
+    #[test]
+    fn test_db_notes_populated() {
+        let mut req = make_request(CloudProvider::Aws, 4.0, 16.0, Environment::Production);
+        req.service = ServiceType::Database;
+        req.db_engine = Some(DatabaseEngine::SqlServer);
+        let rec = recommend(&req);
+        assert!(rec.notes.iter().any(|n| n.contains("SQL Server") || n.contains("RDS")));
     }
 }

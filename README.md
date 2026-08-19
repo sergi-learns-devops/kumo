@@ -52,6 +52,36 @@ rm -f /usr/local/bin/kumo
 rm -rf ~/.kumo
 ```
 
+## Updating
+
+### One-liner (same as install)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sergiserra/kumo/main/install.sh | bash
+```
+
+The install script detects if kumo is already installed and replaces it with the latest version.
+
+### Homebrew
+
+```bash
+brew upgrade kumo
+```
+
+### From source
+
+```bash
+cd kumo
+git pull
+make install
+```
+
+### Verify the update
+
+```bash
+kumo --version
+```
+
 ## Usage
 
 ### Interactive mode (default)
@@ -60,7 +90,7 @@ rm -rf ~/.kumo
 kumo
 ```
 
-Launches an interactive wizard that guides you through selecting provider, resources, and environment.
+Launches an interactive wizard that guides you through selecting provider, environment, workload type, region, and resources.
 
 ### Flags mode
 
@@ -70,6 +100,7 @@ kumo --cloud aws --vcpu 4 --ram 16 --env dev --region eu-west-1
 kumo --cloud azure --vcpu 16 --ram 64 --env prod --region eastus
 kumo -c gcp -v 0.5 -r 2 -e dev --region us-central1
 kumo -c aws -v 4 -r 16 -e prod --region us-east-1 --family M6i
+kumo -c aws -v 8 -r 32 -e prod --region us-east-1 -w ai
 ```
 
 ### Options
@@ -82,8 +113,39 @@ kumo -c aws -v 4 -r 16 -e prod --region us-east-1 --family M6i
 | `--env` | `-e` | Target environment | `production`, `pre-production`, `test`, `dev` |
 | `--region` | | Cloud region | `us-central1`, `eu-west-1`, `eastus`, etc. |
 | `--family` | `-f` | Filter by instance family | `N2`, `M5`, `Dsv5`, etc. |
+| `--workload` | `-w` | Workload type | `general`, `ai`, `sap`, `hpc`, `database`, `batch`, `storage` |
+| `--service` | | Service type | `vm` (default), `db` |
+| `--engine` | | Database engine (requires `--service db`) | `postgres`, `mysql`, `sqlserver` |
 | `--list-regions` | | List valid regions for a provider | `gcp`, `aws`, `azure` |
 | `--update-catalog` | | Check for pricing updates | |
+
+### Workload types
+
+kumo recommends specialized instance families based on your workload:
+
+| Workload | Flag value | Aliases | Instance families |
+|----------|-----------|---------|-------------------|
+| **General purpose** | `general` | `gp`, `standard` | N2, M5, Dsv5 (balanced) |
+| **AI / Machine Learning** | `ai` | `ml`, `gpu` | A2, G2 (GCP), G5, P4d (AWS), NC (Azure) |
+| **SAP** | `sap` | `hana` | M2, M1 (GCP), X2idn, U (AWS), Msv2 (Azure) |
+| **HPC** | `hpc` | `compute` | C2 (GCP), Hpc6a, C6i (AWS), HBv3 (Azure) |
+| **Databases** | `database` | `db`, `memory` | N2-highmem (GCP), R6i (AWS), Esv5 (Azure) |
+| **Batch / CI-CD** | `batch` | `ci`, `cicd` | E2, C2D (GCP), C6i (AWS), Fsv2 (Azure) |
+| **Storage-intensive** | `storage` | `io`, `disk` | N2D (GCP), I3, D3 (AWS), Lsv2 (Azure) |
+
+```bash
+# AI workload — recommends GPU instances
+kumo -c aws -v 8 -r 32 -e prod --region us-east-1 -w ai
+
+# SAP workload — recommends certified high-memory instances
+kumo -c gcp -v 96 -r 1400 -e prod --region europe-west1 -w sap
+
+# HPC workload — recommends compute-optimized instances
+kumo -c azure -v 64 -r 128 -e prod --region eastus -w hpc
+
+# Database workload — recommends memory-optimized instances
+kumo -c aws -v 8 -r 64 -e prod --region eu-west-1 -w database
+```
 
 ### List available regions
 
@@ -127,7 +189,7 @@ NO_COLOR=1 kumo --cloud aws --vcpu 4 --ram 16 --env prod --region us-east-1
 
 ## How it works
 
-1. Selects instance catalog based on cloud provider
+1. Selects instance catalog based on cloud provider and workload type
 2. Filters by tier (Standard for prod/pre-prod, Economy for test/dev)
 3. Optionally filters by instance family
 4. Scores instances by proximity to requirements and cost efficiency
