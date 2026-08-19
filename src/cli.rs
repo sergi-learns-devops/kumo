@@ -3,7 +3,7 @@ use clap::Parser;
 #[derive(Parser, Debug)]
 #[command(name = "kumo", version, about = "☁ Cloud instance type recommender (GCP, AWS & Azure)")]
 pub struct CliArgs {
-    /// Cloud provider: gcp, aws, or azure
+    /// Cloud provider: gcp, aws, azure, or all (compare all providers)
     #[arg(long = "cloud", short = 'c')]
     pub cloud: Option<String>,
 
@@ -46,9 +46,14 @@ pub struct CliArgs {
     /// Download updated pricing catalog (requires network)
     #[arg(long = "update-catalog")]
     pub update_catalog: bool,
+
+    /// Generate shell completions (bash, zsh, fish)
+    #[arg(long = "completions")]
+    pub completions: Option<String>,
 }
 
 impl CliArgs {
+    #[allow(dead_code)]
     pub fn is_complete(&self) -> bool {
         self.cloud.is_some()
             && self.vcpu.is_some()

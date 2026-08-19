@@ -216,6 +216,39 @@ T3, T3a (economy), M5, M6i, C5, C6i, R5, R6i (standard)
 ### Azure
 B, Av2 (economy), Dsv5, Dsv4, Esv5, Fsv2, Lsv2, NCasT4v3 (standard)
 
+## Roadmap
+
+### v0.3 (next)
+
+| # | Feature | Status |
+|---|---------|--------|
+| 1 | Committed Use Pricing (CUD/Reserved/Savings Plans) — show savings vs on-demand | ✅ Done |
+| 2 | Multi-cloud compare (`--cloud all`) — unified ranking across GCP, AWS & Azure | ✅ Done |
+| 3 | Config file (`~/.kumo/config.toml`) — persist defaults (cloud, region, env) | ✅ Done |
+| 4 | Table side-by-side — aligned columns for easier visual comparison | ✅ Done |
+| 5 | Shell completions (`--completions bash\|zsh\|fish`) | ✅ Done |
+
+### v1.0 (stable)
+
+| # | Feature | Status |
+|---|---------|--------|
+| 6 | Output structured (`--output json\|csv`) | Planned |
+| 7 | Spot/Preemptible pricing (`--spot`) | Planned |
+| 8 | `--explain` mode — scoring breakdown per recommendation | Planned |
+| 9 | GPU filter (`--gpu-type T4\|A100\|H100`) for AI workloads | Planned |
+| 10 | Terraform/Pulumi snippet (`--emit terraform`) | Planned |
+| 11 | Budget constraint (`--max-cost`) | Planned |
+
+### v2.0 (future)
+
+| # | Feature | Status |
+|---|---------|--------|
+| 12 | Kubernetes node sizing (`--k8s`) | Planned |
+| 13 | Multi-region compare (`--region us-east-1,eu-west-1`) | Planned |
+| 14 | Network bandwidth scoring | Planned |
+| 15 | Compact mode (auto-detect TTY for pipelines) | Planned |
+| 16 | Plugin system (WASM) for custom providers | Planned |
+
 ## Pricing disclaimer
 
 Prices are embedded estimates based on official pricing pages (last updated: 2024-11-01). Actual costs may vary by region, applied discounts, and current pricing. Use `--update-catalog` to check for updates.

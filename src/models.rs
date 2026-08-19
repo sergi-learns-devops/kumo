@@ -134,8 +134,33 @@ pub struct Recommendation {
 pub struct ScoredInstance {
     pub instance: &'static InstanceType,
     pub score: f32,
+    #[allow(dead_code)]
     pub delta_vcpu: f32,
+    #[allow(dead_code)]
     pub delta_ram: f32,
+}
+
+/// Committed use discount rates by provider
+pub struct CommittedRates {
+    pub one_year_discount: f32,  // e.g., 0.37 = 37% off
+    pub three_year_discount: f32,
+}
+
+pub fn committed_rates(cloud: CloudProvider) -> CommittedRates {
+    match cloud {
+        CloudProvider::Gcp => CommittedRates {
+            one_year_discount: 0.37,
+            three_year_discount: 0.55,
+        },
+        CloudProvider::Aws => CommittedRates {
+            one_year_discount: 0.36,
+            three_year_discount: 0.56,
+        },
+        CloudProvider::Azure => CommittedRates {
+            one_year_discount: 0.34,
+            three_year_discount: 0.51,
+        },
+    }
 }
 
 #[derive(Debug, Clone)]

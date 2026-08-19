@@ -1,4 +1,4 @@
-use crate::models::{Environment, Recommendation, ServiceType, UserRequest, WorkloadType, CATALOG_META};
+use crate::models::{committed_rates, Environment, Recommendation, ServiceType, UserRequest, WorkloadType, CATALOG_META};
 use std::env;
 use std::time::Instant;
 
@@ -33,18 +33,13 @@ const COLORS_OFF: Colors = Colors {
 };
 
 fn get_colors() -> &'static Colors {
-    if env::var("NO_COLOR").is_ok() {
-        &COLORS_OFF
-    } else {
-        &COLORS_ON
-    }
+    if env::var("NO_COLOR").is_ok() { &COLORS_OFF } else { &COLORS_ON }
 }
 
 fn use_emoji() -> bool {
     env::var("NO_COLOR").is_err()
 }
 
-/// Format vCPU count: show as integer if whole number, otherwise as decimal
 fn fmt_vcpu(vcpus: f32) -> String {
     if (vcpus - vcpus.round()).abs() < 0.01 && vcpus >= 1.0 {
         format!("{}", vcpus as u32)
@@ -53,102 +48,20 @@ fn fmt_vcpu(vcpus: f32) -> String {
     }
 }
 
-/// Generate a score bar [████████░░░░░░░░░░░░] 
-fn score_bar(score: f32, c: &Colors) -> String {
-    let pct = (score * 100.0).min(100.0).max(0.0);
-    let filled = ((pct / 100.0) * 20.0).round() as usize;
-    let empty = 20 - filled;
-
-    let bar_color = if pct >= 80.0 {
-        c.green
-    } else if pct >= 50.0 {
-        c.yellow
-    } else {
-        c.dim
-    };
-
-    let score_color = bar_color;
-
-    if env::var("NO_COLOR").is_ok() {
-        format!(
-            "[{}{}] {:.0}%",
-            "#".repeat(filled),
-            ".".repeat(empty),
-            pct
-        )
-    } else {
-        format!(
-            "{}[{}{}{}{}]{} {}{:.0}%{}",
-            c.dim,
-            bar_color,
-            "█".repeat(filled),
-            c.dim,
-            "░".repeat(empty),
-            c.reset,
-            score_color,
-            pct,
-            c.reset
-        )
-    }
-}
-
-/// Format delta with arrows and color
-fn fmt_delta_vcpu(delta: f32, c: &Colors) -> String {
-    if delta.abs() < 0.01 {
-        format!("{}═{}", c.green, c.reset)
-    } else if delta > 0.0 {
-        format!("{}↑{}{}", c.green, fmt_vcpu(delta), c.reset)
-    } else {
-        format!("{}↓{}{}", c.red, fmt_vcpu(delta.abs()), c.reset)
-    }
-}
-
-fn fmt_delta_ram(delta: f32, c: &Colors) -> String {
-    if delta.abs() < 0.01 {
-        format!("{}═{}", c.green, c.reset)
-    } else if delta > 0.0 {
-        format!("{}↑{:.0}{}", c.green, delta, c.reset)
-    } else {
-        format!("{}↓{:.0}{}", c.red, delta.abs(), c.reset)
-    }
-}
-
-/// Environment badge with color
 fn env_badge(env: &Environment, c: &Colors) -> String {
     if env::var("NO_COLOR").is_ok() {
         match env {
-            Environment::Production => format!("{} [!]", env),
-            Environment::PreProduction => format!("{} [~]", env),
-            Environment::Test => format!("{} [t]", env),
-            Environment::Dev => format!("{} [d]", env),
+            Environment::Production => "Production [!]".to_string(),
+            Environment::PreProduction => "Pre-Prod [~]".to_string(),
+            Environment::Test => "Test [t]".to_string(),
+            Environment::Dev => "Dev [d]".to_string(),
         }
     } else {
         match env {
             Environment::Production => format!("{}{}Production 🔴{}", c.bold, c.red, c.reset),
-            Environment::PreProduction => {
-                format!("{}{}Pre-Production 🟡{}", c.bold, c.yellow, c.reset)
-            }
+            Environment::PreProduction => format!("{}{}Pre-Prod 🟡{}", c.bold, c.yellow, c.reset),
             Environment::Test => format!("{}{}Test 🔵{}", c.bold, c.cyan, c.reset),
             Environment::Dev => format!("{}{}Dev 🟢{}", c.bold, c.green, c.reset),
-        }
-    }
-}
-
-/// Rank badges
-fn rank_badge(rank: usize) -> &'static str {
-    if env::var("NO_COLOR").is_ok() {
-        match rank {
-            1 => "[1]",
-            2 => "[2]",
-            3 => "[3]",
-            _ => "[-]",
-        }
-    } else {
-        match rank {
-            1 => "❶",
-            2 => "❷",
-            3 => "❸",
-            _ => "•",
         }
     }
 }
@@ -156,7 +69,6 @@ fn rank_badge(rank: usize) -> &'static str {
 pub fn display(recommendation: &Recommendation, request: &UserRequest, start: Instant) {
     let c = get_colors();
     let emoji = use_emoji();
-
     let cloud_icon = if emoji { "☁" } else { "" };
 
     // Header
@@ -171,19 +83,13 @@ pub fn display(recommendation: &Recommendation, request: &UserRequest, start: In
     };
     println!(
         "  {}{} kumo{} — {}{}{} {}{}{}    {}",
-        c.bold,
-        cloud_icon,
-        c.reset,
-        c.bold,
-        c.cyan,
-        service_label,
-        c.dim,
-        request.region,
-        c.reset,
+        c.bold, cloud_icon, c.reset,
+        c.bold, c.cyan, service_label,
+        c.dim, request.region, c.reset,
         env_badge(&request.env, c)
     );
     println!(
-        "  {}╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌{}",
+        "  {}╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌{}",
         c.dim, c.reset
     );
 
@@ -204,107 +110,101 @@ pub fn display(recommendation: &Recommendation, request: &UserRequest, start: In
         print!(" │ {}{}{}", c.yellow, request.workload, c.reset);
     }
     println!();
-
-    // Recommendations
-    println!();
-    let header_icon = if emoji { "▸" } else { ">" };
-    println!("  {}{} Recommendations{}", c.bold, header_icon, c.reset);
     println!();
 
-    let best_cost = recommendation
-        .closest_matches
-        .first()
-        .map(|s| s.instance.cost_hour_usd * 730.0);
+    // Side-by-side table
+    if recommendation.closest_matches.is_empty() {
+        println!("  {}No instances found matching your criteria.{}", c.yellow, c.reset);
+    } else {
+        let rates = committed_rates(request.cloud);
 
-    for (i, scored) in recommendation.closest_matches.iter().enumerate() {
-        let rank = i + 1;
-        let inst = scored.instance;
-        let monthly = inst.cost_hour_usd * 730.0;
-
-        // Rank badge + instance name
-        let is_exact = recommendation.exact_match.is_some()
-            && recommendation.exact_match.unwrap().name == inst.name;
-
-        let name_color = if rank == 1 { c.bold } else { "" };
-        let exact_label = if is_exact {
-            if emoji {
-                format!(" {}◉ exact{}", c.green, c.reset)
-            } else {
-                format!(" (* exact)")
-            }
-        } else {
-            String::new()
-        };
-
+        // Table header
         println!(
-            "  {} {}{}{:<28}{}{}",
-            rank_badge(rank),
-            name_color,
-            c.cyan,
-            inst.name,
-            c.reset,
-            exact_label
+            "  {}{:<28} {:>6} {:>8} {:>10} {:>10} {:>10} {:>5}{}",
+            c.dim, "Instance", "vCPUs", "RAM", "On-Demand", "1yr CUD", "3yr CUD", "Score", c.reset
         );
-
-        // Specs with deltas
         println!(
-            "     {} vCPU {} │ {:.0} GB {} │ {}{}${:.0}/mo{} {}(${:.4}/hr){}",
-            fmt_vcpu(inst.vcpus),
-            fmt_delta_vcpu(scored.delta_vcpu, c),
-            inst.ram_gb,
-            fmt_delta_ram(scored.delta_ram, c),
-            c.bold,
-            if monthly < 100.0 { c.green } else if monthly < 500.0 { c.yellow } else { c.red },
-            monthly,
-            c.reset,
+            "  {}{}{}",
             c.dim,
-            inst.cost_hour_usd,
+            "─".repeat(70),
             c.reset
         );
 
-        // Savings indicator (for #2, #3 relative to #1)
-        if rank > 1 {
-            if let Some(best) = best_cost {
-                let savings = best - monthly;
-                if savings > 1.0 {
-                    println!(
-                        "     {}saves ${:.0}/mo vs #1{}",
-                        c.dim, savings, c.reset
-                    );
-                }
-            }
+        for (i, scored) in recommendation.closest_matches.iter().enumerate() {
+            let inst = scored.instance;
+            let monthly = inst.cost_hour_usd * 730.0;
+            let monthly_1yr = monthly * (1.0 - rates.one_year_discount);
+            let monthly_3yr = monthly * (1.0 - rates.three_year_discount);
+            let pct = (scored.score * 100.0).min(100.0).max(0.0);
+
+            let is_exact = recommendation.exact_match.is_some()
+                && recommendation.exact_match.unwrap().name == inst.name;
+
+            // Row color based on rank
+            let name_fmt = if i == 0 {
+                format!("{}{}", c.bold, c.cyan)
+            } else {
+                c.cyan.to_string()
+            };
+
+            let exact_marker = if is_exact { " ◉" } else { "" };
+
+            let score_color = if pct >= 80.0 { c.green } else if pct >= 50.0 { c.yellow } else { c.dim };
+
+            println!(
+                "  {}{:<28}{} {:>6} {:>6} GB {:>8} {:>8} {:>8} {}{:>4.0}%{}{}",
+                name_fmt,
+                inst.name,
+                c.reset,
+                fmt_vcpu(inst.vcpus),
+                inst.ram_gb as u32,
+                format!("${:.0}/mo", monthly),
+                format!("${:.0}/mo", monthly_1yr),
+                format!("${:.0}/mo", monthly_3yr),
+                score_color,
+                pct,
+                c.reset,
+                exact_marker,
+            );
         }
 
-        // Score bar
-        println!("     {}", score_bar(scored.score, c));
-        println!();
+        println!(
+            "  {}{}{}",
+            c.dim,
+            "─".repeat(70),
+            c.reset
+        );
+
+        // Savings summary
+        if let Some(first) = recommendation.closest_matches.first() {
+            let monthly = first.instance.cost_hour_usd * 730.0;
+            let save_1yr = monthly * rates.one_year_discount;
+            let save_3yr = monthly * rates.three_year_discount;
+            println!(
+                "  {}💰 Savings vs on-demand (#1): 1yr {}−${:.0}/mo (−{:.0}%){} │ 3yr {}−${:.0}/mo (−{:.0}%){}{}",
+                c.dim,
+                c.green, save_1yr, rates.one_year_discount * 100.0, c.dim,
+                c.green, save_3yr, rates.three_year_discount * 100.0, c.reset,
+                c.reset,
+            );
+        }
     }
 
     // Custom machine option
     if let Some(custom) = &recommendation.custom_option {
         let custom_icon = if emoji { "🔧" } else { "[c]" };
         let monthly = custom.estimated_cost_hour * 730.0;
-        println!(
-            "  {} {}Custom:{} {}",
-            custom_icon, c.bold, c.reset, custom.name
-        );
-        println!(
-            "     {} vCPU │ {:.0} GB │ {}~${:.0}/mo{} {}(${:.4}/hr){}",
-            fmt_vcpu(custom.vcpus),
-            custom.ram_gb,
-            c.yellow,
-            monthly,
-            c.reset,
-            c.dim,
-            custom.estimated_cost_hour,
-            c.reset
-        );
         println!();
+        println!(
+            "  {} {}Custom:{} {} │ {} vCPU │ {:.0} GB │ ~${:.0}/mo",
+            custom_icon, c.bold, c.reset, custom.name, fmt_vcpu(custom.vcpus), custom.ram_gb, monthly
+        );
     }
 
     // Separator
+    println!();
     println!(
-        "  {}╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌{}",
+        "  {}╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌{}",
         c.dim, c.reset
     );
 
@@ -316,28 +216,100 @@ pub fn display(recommendation: &Recommendation, request: &UserRequest, start: In
         }
     }
 
-    // Disclaimer
+    // Disclaimer + time
     let warn_icon = if emoji { "⚠" } else { "(!)" };
     println!(
-        "  {}  {}Prices from {} · may vary by region & discounts{}",
+        "  {}  {}Prices from {} · CUD rates are approximate averages{}",
         warn_icon, c.dim, CATALOG_META.last_updated, c.reset
     );
-
-    // Separator
     println!(
-        "  {}╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌{}",
+        "  {}╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌{}",
         c.dim, c.reset
     );
-
-    // Execution time
-    let elapsed = start.elapsed();
     let time_icon = if emoji { "⚡" } else { "" };
+    let elapsed = start.elapsed();
     println!(
         "  {}Done in {:.0}ms {}{}",
-        c.dim,
-        elapsed.as_secs_f64() * 1000.0,
-        time_icon,
-        c.reset
+        c.dim, elapsed.as_secs_f64() * 1000.0, time_icon, c.reset
+    );
+    println!();
+}
+
+/// Display multi-cloud comparison
+pub fn display_multicloud(results: &[(crate::models::CloudProvider, Recommendation)], request: &UserRequest, start: Instant) {
+    let c = get_colors();
+    let emoji = use_emoji();
+    let cloud_icon = if emoji { "☁" } else { "" };
+
+    println!();
+    println!(
+        "  {}{} kumo{} — {}{}Multi-cloud compare{}    {}",
+        c.bold, cloud_icon, c.reset,
+        c.bold, c.cyan, c.reset,
+        env_badge(&request.env, c)
+    );
+    println!(
+        "  {}╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌{}",
+        c.dim, c.reset
+    );
+    print!(
+        "  {}Request:{} {}{}{} vCPUs │ {}{:.1}{} GB RAM",
+        c.dim, c.reset, c.bold, fmt_vcpu(request.vcpus), c.reset, c.bold, request.ram_gb, c.reset
+    );
+    if request.workload != WorkloadType::General {
+        print!(" │ {}{}{}", c.yellow, request.workload, c.reset);
+    }
+    println!();
+    println!();
+
+    // Table header
+    println!(
+        "  {}{:<8} {:<28} {:>6} {:>8} {:>10} {:>10} {:>5}{}",
+        c.dim, "Cloud", "Instance", "vCPUs", "RAM", "On-Demand", "1yr CUD", "Score", c.reset
+    );
+    println!("  {}{}{}", c.dim, "─".repeat(70), c.reset);
+
+    for (cloud, rec) in results {
+        let rates = committed_rates(*cloud);
+        if let Some(best) = rec.closest_matches.first() {
+            let inst = best.instance;
+            let monthly = inst.cost_hour_usd * 730.0;
+            let monthly_1yr = monthly * (1.0 - rates.one_year_discount);
+            let pct = (best.score * 100.0).min(100.0).max(0.0);
+            let score_color = if pct >= 80.0 { c.green } else if pct >= 50.0 { c.yellow } else { c.dim };
+
+            println!(
+                "  {}{:<8}{} {}{:<28}{} {:>6} {:>6} GB {:>8} {:>8} {}{:>4.0}%{}",
+                c.bold, cloud, c.reset,
+                c.cyan, inst.name, c.reset,
+                fmt_vcpu(inst.vcpus),
+                inst.ram_gb as u32,
+                format!("${:.0}/mo", monthly),
+                format!("${:.0}/mo", monthly_1yr),
+                score_color, pct, c.reset,
+            );
+        } else {
+            println!("  {}{:<8}{} {}No match found{}", c.bold, cloud, c.reset, c.dim, c.reset);
+        }
+    }
+
+    println!("  {}{}{}", c.dim, "─".repeat(70), c.reset);
+
+    // Separator + time
+    println!(
+        "  {}╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌{}",
+        c.dim, c.reset
+    );
+    let warn_icon = if emoji { "⚠" } else { "(!)" };
+    println!(
+        "  {}  {}Prices from {} · CUD rates are approximate averages{}",
+        warn_icon, c.dim, CATALOG_META.last_updated, c.reset
+    );
+    let time_icon = if emoji { "⚡" } else { "" };
+    let elapsed = start.elapsed();
+    println!(
+        "  {}Done in {:.0}ms {}{}",
+        c.dim, elapsed.as_secs_f64() * 1000.0, time_icon, c.reset
     );
     println!();
 }
