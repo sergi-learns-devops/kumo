@@ -120,13 +120,13 @@ pub fn display(recommendation: &Recommendation, request: &UserRequest, start: In
 
         // Table header
         println!(
-            "  {}{:<28} {:>6} {:>8} {:>10} {:>10} {:>10} {:>5}{}",
+            "  {}{:<26} {:>5} {:>6} {:>10} {:>10} {:>10}   {:>5}{}",
             c.dim, "Instance", "vCPUs", "RAM", "On-Demand", "1yr CUD", "3yr CUD", "Score", c.reset
         );
         println!(
             "  {}{}{}",
             c.dim,
-            "─".repeat(70),
+            "─".repeat(82),
             c.reset
         );
 
@@ -152,7 +152,7 @@ pub fn display(recommendation: &Recommendation, request: &UserRequest, start: In
             let score_color = if pct >= 80.0 { c.green } else if pct >= 50.0 { c.yellow } else { c.dim };
 
             println!(
-                "  {}{:<28}{} {:>6} {:>6} GB {:>8} {:>8} {:>8} {}{:>4.0}%{}{}",
+                "  {}{:<26}{} {:>5} {:>4} GB {:>10} {:>10} {:>10}   {}{:>4.0}%{}{}",
                 name_fmt,
                 inst.name,
                 c.reset,
@@ -171,7 +171,7 @@ pub fn display(recommendation: &Recommendation, request: &UserRequest, start: In
         println!(
             "  {}{}{}",
             c.dim,
-            "─".repeat(70),
+            "─".repeat(82),
             c.reset
         );
 
@@ -264,10 +264,10 @@ pub fn display_multicloud(results: &[(crate::models::CloudProvider, Recommendati
 
     // Table header
     println!(
-        "  {}{:<8} {:<28} {:>6} {:>8} {:>10} {:>10} {:>5}{}",
+        "  {}{:<7} {:<26} {:>5} {:>6} {:>10} {:>10} {:>5}{}",
         c.dim, "Cloud", "Instance", "vCPUs", "RAM", "On-Demand", "1yr CUD", "Score", c.reset
     );
-    println!("  {}{}{}", c.dim, "─".repeat(70), c.reset);
+    println!("  {}{}{}", c.dim, "─".repeat(78), c.reset);
 
     for (cloud, rec) in results {
         let rates = committed_rates(*cloud);
@@ -279,7 +279,7 @@ pub fn display_multicloud(results: &[(crate::models::CloudProvider, Recommendati
             let score_color = if pct >= 80.0 { c.green } else if pct >= 50.0 { c.yellow } else { c.dim };
 
             println!(
-                "  {}{:<8}{} {}{:<28}{} {:>6} {:>6} GB {:>8} {:>8} {}{:>4.0}%{}",
+                "  {}{:<7}{} {}{:<26}{} {:>5} {:>4} GB {:>10} {:>10} {}{:>4.0}%{}",
                 c.bold, cloud, c.reset,
                 c.cyan, inst.name, c.reset,
                 fmt_vcpu(inst.vcpus),
@@ -289,11 +289,11 @@ pub fn display_multicloud(results: &[(crate::models::CloudProvider, Recommendati
                 score_color, pct, c.reset,
             );
         } else {
-            println!("  {}{:<8}{} {}No match found{}", c.bold, cloud, c.reset, c.dim, c.reset);
+            println!("  {}{:<7}{} {}No match found{}", c.bold, cloud, c.reset, c.dim, c.reset);
         }
     }
 
-    println!("  {}{}{}", c.dim, "─".repeat(70), c.reset);
+    println!("  {}{}{}", c.dim, "─".repeat(78), c.reset);
 
     // Separator + time
     println!(

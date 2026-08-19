@@ -172,13 +172,38 @@ fn main() {
     // Check for multi-cloud mode
     let is_multicloud = args.cloud.as_deref() == Some("all");
 
-    // Determine if we have enough info to run in flags mode (args + config)
-    let has_cloud = args.cloud.is_some() || cfg.defaults.cloud.is_some();
-    let has_vcpu = args.vcpu.is_some();
-    let has_ram = args.ram.is_some();
-    let has_env = args.env.is_some() || cfg.defaults.env.is_some();
-    let has_region = args.region.is_some() || cfg.defaults.region.is_some();
-    let can_run_flags = has_cloud && has_vcpu && has_ram && has_env && has_region;
+    // Determine if user is attempting flags mode (passed at least one data flag)
+    let any_data_flag = args.cloud.is_some()
+        || args.vcpu.is_some()
+        || args.ram.is_some()
+        || args.env.is_some()
+        || args.region.is_some()
+        || args.workload.is_some()
+        || args.service.is_some()
+        || args.family.is_some();
+
+    // If user passed any flag, validate all required params are present (args + config)
+    if any_data_flag && !is_multicloud {
+        let has_cloud = args.cloud.is_some() || cfg.defaults.cloud.is_some();
+        let has_vcpu = args.vcpu.is_some();
+        let has_ram = args.ram.is_some();
+        let has_env = args.env.is_some() || cfg.defaults.env.is_some();
+        let has_region = args.region.is_some() || cfg.defaults.region.is_some();
+
+        let mut missing = Vec::new();
+        if !has_cloud { missing.push("--cloud (-c)"); }
+        if !has_vcpu { missing.push("--vcpu (-v)"); }
+        if !has_ram { missing.push("--ram (-r)"); }
+        if !has_env { missing.push("--env (-e)"); }
+        if !has_region { missing.push("--region"); }
+
+        if !missing.is_empty() {
+            eprintln!("Error: missing required parameters: {}", missing.join(", "));
+            eprintln!("  Provide all required flags or run 'kumo' without flags for interactive mode.");
+            eprintln!("  You can also set defaults in ~/.kumo/config.toml");
+            std::process::exit(1);
+        }
+    }
 
     let request = if is_multicloud {
         // Multi-cloud mode: need vcpu, ram, env (region not required)
@@ -215,7 +240,7 @@ fn main() {
             service: ServiceType::Vm,
             db_engine: None,
         }
-    } else if can_run_flags {
+    } else if any_data_flag {
         // All args provided — flags mode
         let cloud_str = args.cloud.as_deref().or(cfg.defaults.cloud.as_deref()).unwrap_or("");
         let cloud = parse_cloud(cloud_str).unwrap_or_else(|| {
