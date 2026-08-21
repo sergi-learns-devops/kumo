@@ -24,11 +24,13 @@ pub fn recommend(request: &UserRequest) -> Recommendation {
     };
 
     // 2. Filter by tier based on environment
+    // Test uses Standard tier (same as prod) so tests run on equivalent hardware
+    // Dev uses Economy tier for minimum cost
     let filtered: Vec<&'static InstanceType> = if request.service == ServiceType::Database || request.workload != WorkloadType::General {
         // DB and specialized workloads: filter by tier normally
         let target_tier = match request.env {
-            Environment::Production | Environment::PreProduction => InstanceTier::Standard,
-            Environment::Test | Environment::Dev => InstanceTier::Economy,
+            Environment::Production | Environment::PreProduction | Environment::Test => InstanceTier::Standard,
+            Environment::Dev => InstanceTier::Economy,
         };
         // For DB/workloads: if no economy tier available, use all
         let tier_filtered: Vec<&'static InstanceType> = catalog.iter().filter(|i| i.tier == target_tier).collect();
@@ -39,8 +41,8 @@ pub fn recommend(request: &UserRequest) -> Recommendation {
         }
     } else {
         let target_tier = match request.env {
-            Environment::Production | Environment::PreProduction => InstanceTier::Standard,
-            Environment::Test | Environment::Dev => InstanceTier::Economy,
+            Environment::Production | Environment::PreProduction | Environment::Test => InstanceTier::Standard,
+            Environment::Dev => InstanceTier::Economy,
         };
         catalog.iter().filter(|i| i.tier == target_tier).collect()
     };
@@ -177,12 +179,14 @@ fn build_notes(request: &UserRequest) -> Vec<&'static str> {
                 notes.push("Consider scheduling instance shutdowns outside business hours.");
             }
             Environment::Test => {
-                notes.push("Spot/Preemptible instances are ideal for test workloads.");
-                notes.push("Consider auto-shutdown policies to avoid idle costs.");
+                notes.push("Using production-grade instances for realistic testing.");
+                notes.push("Use Spot/Preemptible VMs to reduce cost up to 80%.");
+                notes.push("Consider auto-shutdown — tests don't need 24/7 uptime.");
             }
             Environment::Dev => {
-                notes.push("Use Spot/Preemptible instances for maximum savings in dev.");
-                notes.push("Consider smaller instances with burstable performance.");
+                notes.push("Using economy-tier instances for minimum cost.");
+                notes.push("Use Spot/Preemptible for additional savings.");
+                notes.push("Burstable instances (E2/T3/B) are ideal for dev workloads.");
                 notes.push("Schedule auto-shutdown outside working hours for ~65% savings.");
             }
         }

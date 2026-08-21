@@ -1,6 +1,6 @@
 [package]
 name = "kumo"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 description = "Cloud instance type recommender (GCP, AWS & Azure)"
 license = "MIT"
