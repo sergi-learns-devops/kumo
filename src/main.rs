@@ -239,6 +239,8 @@ fn main() {
             workload,
             service: ServiceType::Vm,
             db_engine: None,
+            gpu_type: args.gpu_type.clone(),
+            gpu_count: args.gpu_count,
         }
     } else if any_data_flag {
         // All args provided — flags mode
@@ -314,6 +316,8 @@ fn main() {
             workload,
             service,
             db_engine,
+            gpu_type: args.gpu_type,
+            gpu_count: args.gpu_count,
         }
     } else {
         // Missing args — interactive mode

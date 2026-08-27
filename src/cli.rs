@@ -31,6 +31,14 @@ pub struct CliArgs {
     #[arg(long = "workload", short = 'w')]
     pub workload: Option<String>,
 
+    /// GPU model for AI workloads (e.g., T4, A10G, L4, A100, H100)
+    #[arg(long = "gpu-type")]
+    pub gpu_type: Option<String>,
+
+    /// Minimum number of GPUs required
+    #[arg(long = "gpu-count")]
+    pub gpu_count: Option<u8>,
+
     /// Service type: vm or db (default: vm)
     #[arg(long = "service")]
     pub service: Option<String>,

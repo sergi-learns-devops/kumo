@@ -14,7 +14,7 @@ pub fn recommend(request: &UserRequest) -> Recommendation {
         let engine = request.db_engine.unwrap_or(DatabaseEngine::PostgreSql);
         db_catalog::get_db_catalog(request.cloud, engine)
     } else if request.workload != WorkloadType::General {
-        // Use specialized workload catalog
+        // Use workload catalog (dynamic from live, fallback to static)
         match workloads::get_workload_catalog(request.workload, request.cloud) {
             Some(wl_catalog) => wl_catalog,
             None => get_default_catalog(request),
@@ -23,23 +23,27 @@ pub fn recommend(request: &UserRequest) -> Recommendation {
         get_default_catalog(request)
     };
 
-    // 2. Filter by tier based on environment
-    // Test uses Standard tier (same as prod) so tests run on equivalent hardware
-    // Dev uses Economy tier for minimum cost
-    let filtered: Vec<&'static InstanceType> = if request.service == ServiceType::Database || request.workload != WorkloadType::General {
-        // DB and specialized workloads: filter by tier normally
+    // 2. Filter by tier and workload patterns
+    let filtered: Vec<&'static InstanceType> = if request.service == ServiceType::Database {
+        // DB: filter by tier
         let target_tier = match request.env {
             Environment::Production | Environment::PreProduction | Environment::Test => InstanceTier::Standard,
             Environment::Dev => InstanceTier::Economy,
         };
-        // For DB/workloads: if no economy tier available, use all
         let tier_filtered: Vec<&'static InstanceType> = catalog.iter().filter(|i| i.tier == target_tier).collect();
-        if tier_filtered.is_empty() {
+        if tier_filtered.is_empty() { catalog.iter().collect() } else { tier_filtered }
+    } else if request.workload != WorkloadType::General {
+        // Specialized workloads: filter by workload patterns (for live catalog)
+        // then by tier
+        let workload_filtered = workloads::filter_by_workload(catalog, request.workload, request.cloud);
+        if workload_filtered.is_empty() {
+            // No matches with pattern filtering — use all (static catalog case)
             catalog.iter().collect()
         } else {
-            tier_filtered
+            workload_filtered
         }
     } else {
+        // General: filter by tier based on environment
         let target_tier = match request.env {
             Environment::Production | Environment::PreProduction | Environment::Test => InstanceTier::Standard,
             Environment::Dev => InstanceTier::Economy,
@@ -51,6 +55,27 @@ pub fn recommend(request: &UserRequest) -> Recommendation {
     let filtered: Vec<&'static InstanceType> = if let Some(ref family) = request.family {
         let family_lower = family.to_lowercase();
         filtered.into_iter().filter(|i| i.family.to_lowercase() == family_lower).collect()
+    } else {
+        filtered
+    };
+
+    // 3b. Filter by GPU type and count (for AI workloads)
+    let filtered: Vec<&'static InstanceType> = if request.gpu_type.is_some() || request.gpu_count.is_some() {
+        filtered.into_iter().filter(|i| {
+            if let Some(ref gpu) = i.gpu {
+                let type_ok = match &request.gpu_type {
+                    Some(t) => gpu.model.to_lowercase() == t.to_lowercase(),
+                    None => true,
+                };
+                let count_ok = match request.gpu_count {
+                    Some(c) => gpu.count >= c,
+                    None => true,
+                };
+                type_ok && count_ok
+            } else {
+                false // No GPU on this instance, filter it out
+            }
+        }).collect()
     } else {
         filtered
     };
@@ -288,6 +313,8 @@ mod tests {
             workload: WorkloadType::General,
             service: ServiceType::Vm,
             db_engine: None,
+            gpu_type: None,
+            gpu_count: None,
         }
     }
 

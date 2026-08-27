@@ -107,7 +107,7 @@ kumo -c aws -v 8 -r 32 -e prod --region us-east-1 -w ai
 
 | Flag | Short | Description | Values |
 |------|-------|-------------|--------|
-| `--cloud` | `-c` | Cloud provider | `gcp`, `aws`, `azure` |
+| `--cloud` | `-c` | Cloud provider | `gcp`, `aws`, `azure`, `all` |
 | `--vcpu` | `-v` | Number of vCPUs (supports decimals) | 0.25-512 |
 | `--ram` | `-r` | RAM in GB | 0.5-12288 |
 | `--env` | `-e` | Target environment | `production`, `pre-production`, `test`, `dev` |
@@ -116,8 +116,11 @@ kumo -c aws -v 8 -r 32 -e prod --region us-east-1 -w ai
 | `--workload` | `-w` | Workload type | `general`, `ai`, `sap`, `hpc`, `database`, `batch`, `storage` |
 | `--service` | | Service type | `vm` (default), `db` |
 | `--engine` | | Database engine (requires `--service db`) | `postgres`, `mysql`, `sqlserver` |
+| `--gpu-type` | | GPU model (for AI workloads) | `T4`, `A10G`, `L4`, `A100`, `H100` |
+| `--gpu-count` | | Minimum number of GPUs | 1-8 |
 | `--list-regions` | | List valid regions for a provider | `gcp`, `aws`, `azure` |
 | `--update-catalog` | | Check for pricing updates | |
+| `--completions` | | Generate shell completions | `bash`, `zsh`, `fish` |
 
 ### Workload types
 
@@ -145,6 +148,85 @@ kumo -c azure -v 64 -r 128 -e prod --region eastus -w hpc
 
 # Database workload — recommends memory-optimized instances
 kumo -c aws -v 8 -r 64 -e prod --region eu-west-1 -w database
+```
+
+### GPU filter (AI workloads)
+
+Filter by GPU model and minimum count for AI/ML workloads:
+
+```bash
+# All GPU instances
+kumo -c aws -v 8 -r 32 -e prod --region us-east-1 -w ai
+
+# Filter by T4 GPU
+kumo -c aws -v 4 -r 16 -e prod --region us-east-1 -w ai --gpu-type T4
+
+# Filter by A100 with at least 2 GPUs
+kumo -c gcp -v 24 -r 170 -e prod --region us-central1 -w ai --gpu-type A100 --gpu-count 2
+```
+
+Available GPUs by provider:
+
+| Provider | GPUs |
+|----------|------|
+| GCP | L4 (24 GB), A100 (40 GB) |
+| AWS | T4 (16 GB), A10G (24 GB), A100 (40 GB) |
+| Azure | T4 (16 GB), A100 (80 GB) |
+
+### Managed Database instances
+
+Recommend instance classes for Cloud SQL, RDS, and Azure Database:
+
+```bash
+# RDS PostgreSQL
+kumo -c aws -v 4 -r 16 -e prod --region us-east-1 --service db --engine postgres
+
+# Cloud SQL MySQL
+kumo -c gcp -v 2 -r 8 -e dev --region us-central1 --service db --engine mysql
+
+# Azure Database SQL Server
+kumo -c azure -v 8 -r 32 -e prod --region eastus --service db --engine sqlserver
+```
+
+### Multi-cloud compare
+
+Compare the best instance across all providers at once:
+
+```bash
+kumo --cloud all -v 4 -r 16 -e prod
+kumo --cloud all -v 8 -r 32 -e prod -w ai
+```
+
+### Config file
+
+Save your defaults in `~/.kumo/config.toml` to avoid repeating flags:
+
+```toml
+[defaults]
+cloud = "gcp"
+region = "europe-west1"
+env = "dev"
+# workload = "general"
+# service = "vm"
+```
+
+Then just run:
+
+```bash
+kumo -v 4 -r 16
+```
+
+### Shell completions
+
+```bash
+# Zsh
+kumo --completions zsh >> ~/.zshrc
+
+# Bash
+kumo --completions bash >> ~/.bashrc
+
+# Fish
+kumo --completions fish > ~/.config/fish/completions/kumo.fish
 ```
 
 ### List available regions
@@ -190,8 +272,8 @@ NO_COLOR=1 kumo --cloud aws --vcpu 4 --ram 16 --env prod --region us-east-1
 ## How it works
 
 1. Selects instance catalog based on cloud provider and workload type
-2. Filters by tier (Standard for prod/pre-prod, Economy for test/dev)
-3. Optionally filters by instance family
+2. Filters by tier (Standard for prod/pre-prod/test, Economy for dev)
+3. Optionally filters by instance family and/or GPU type
 4. Scores instances by proximity to requirements and cost efficiency
 5. Returns top 3 recommendations + custom machine option (GCP only)
 
@@ -235,7 +317,7 @@ B, Av2 (economy), Dsv5, Dsv4, Esv5, Fsv2, Lsv2, NCasT4v3 (standard)
 | 6 | Output structured (`--output json\|csv`) | Planned |
 | 7 | Spot/Preemptible pricing (`--spot`) | Planned |
 | 8 | `--explain` mode — scoring breakdown per recommendation | Planned |
-| 9 | GPU filter (`--gpu-type T4\|A100\|H100`) for AI workloads | Planned |
+| 9 | GPU filter (`--gpu-type T4\|A100\|H100`) for AI workloads | ✅ Done |
 | 10 | Terraform/Pulumi snippet (`--emit terraform`) | Planned |
 | 11 | Budget constraint (`--max-cost`) | Planned |
 

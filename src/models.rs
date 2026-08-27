@@ -104,6 +104,8 @@ pub struct UserRequest {
     pub workload: WorkloadType,
     pub service: ServiceType,
     pub db_engine: Option<DatabaseEngine>,
+    pub gpu_type: Option<String>,
+    pub gpu_count: Option<u8>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -120,6 +122,14 @@ pub struct InstanceType {
     pub ram_gb: f32,
     pub tier: InstanceTier,
     pub cost_hour_usd: f32,
+    pub gpu: Option<GpuInfo>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct GpuInfo {
+    pub model: &'static str,
+    pub count: u8,
+    pub vram_gb: u16,
 }
 
 #[derive(Debug, Clone)]

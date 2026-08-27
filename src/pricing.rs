@@ -105,6 +105,7 @@ fn convert_instances(cached: &[CachedInstance]) -> Vec<InstanceType> {
                 ram_gb: c.ram_gb,
                 tier,
                 cost_hour_usd: c.cost_hour_usd,
+                gpu: None,
             })
         })
         .collect()

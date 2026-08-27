@@ -117,16 +117,24 @@ pub fn display(recommendation: &Recommendation, request: &UserRequest, start: In
         println!("  {}No instances found matching your criteria.{}", c.yellow, c.reset);
     } else {
         let rates = committed_rates(request.cloud);
+        let show_gpu = request.workload == WorkloadType::Ai;
 
         // Table header
-        println!(
-            "  {}{:<26} {:>5} {:>6} {:>10} {:>10} {:>10}   {:>5}{}",
-            c.dim, "Instance", "vCPUs", "RAM", "On-Demand", "1yr CUD", "3yr CUD", "Score", c.reset
-        );
+        if show_gpu {
+            println!(
+                "  {}{:<26} {:>5} {:>6} {:>14} {:>10} {:>10}   {:>5}{}",
+                c.dim, "Instance", "vCPUs", "RAM", "GPU", "On-Demand", "1yr CUD", "Score", c.reset
+            );
+        } else {
+            println!(
+                "  {}{:<26} {:>5} {:>6} {:>10} {:>10} {:>10}   {:>5}{}",
+                c.dim, "Instance", "vCPUs", "RAM", "On-Demand", "1yr CUD", "3yr CUD", "Score", c.reset
+            );
+        }
         println!(
             "  {}{}{}",
             c.dim,
-            "─".repeat(82),
+            "─".repeat(if show_gpu { 86 } else { 82 }),
             c.reset
         );
 
@@ -140,7 +148,6 @@ pub fn display(recommendation: &Recommendation, request: &UserRequest, start: In
             let is_exact = recommendation.exact_match.is_some()
                 && recommendation.exact_match.unwrap().name == inst.name;
 
-            // Row color based on rank
             let name_fmt = if i == 0 {
                 format!("{}{}", c.bold, c.cyan)
             } else {
@@ -148,30 +155,43 @@ pub fn display(recommendation: &Recommendation, request: &UserRequest, start: In
             };
 
             let exact_marker = if is_exact { " ◉" } else { "" };
-
             let score_color = if pct >= 80.0 { c.green } else if pct >= 50.0 { c.yellow } else { c.dim };
 
-            println!(
-                "  {}{:<26}{} {:>5} {:>4} GB {:>10} {:>10} {:>10}   {}{:>4.0}%{}{}",
-                name_fmt,
-                inst.name,
-                c.reset,
-                fmt_vcpu(inst.vcpus),
-                inst.ram_gb as u32,
-                format!("${:.0}/mo", monthly),
-                format!("${:.0}/mo", monthly_1yr),
-                format!("${:.0}/mo", monthly_3yr),
-                score_color,
-                pct,
-                c.reset,
-                exact_marker,
-            );
+            if show_gpu {
+                let gpu_str = match &inst.gpu {
+                    Some(gpu) => format!("{}x {} {}GB", gpu.count, gpu.model, gpu.vram_gb),
+                    None => "—".to_string(),
+                };
+                println!(
+                    "  {}{:<26}{} {:>5} {:>4} GB {:>14} {:>10} {:>10}   {}{:>4.0}%{}{}",
+                    name_fmt, inst.name, c.reset,
+                    fmt_vcpu(inst.vcpus),
+                    inst.ram_gb as u32,
+                    gpu_str,
+                    format!("${:.0}/mo", monthly),
+                    format!("${:.0}/mo", monthly_1yr),
+                    score_color, pct, c.reset,
+                    exact_marker,
+                );
+            } else {
+                println!(
+                    "  {}{:<26}{} {:>5} {:>4} GB {:>10} {:>10} {:>10}   {}{:>4.0}%{}{}",
+                    name_fmt, inst.name, c.reset,
+                    fmt_vcpu(inst.vcpus),
+                    inst.ram_gb as u32,
+                    format!("${:.0}/mo", monthly),
+                    format!("${:.0}/mo", monthly_1yr),
+                    format!("${:.0}/mo", monthly_3yr),
+                    score_color, pct, c.reset,
+                    exact_marker,
+                );
+            }
         }
 
         println!(
             "  {}{}{}",
             c.dim,
-            "─".repeat(82),
+            "─".repeat(if show_gpu { 86 } else { 82 }),
             c.reset
         );
 
