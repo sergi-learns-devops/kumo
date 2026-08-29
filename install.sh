@@ -1,9 +1,9 @@
 #!/bin/bash
-# kumo installer — https://github.com/sergiserra/kumo
-# Usage: curl -fsSL https://raw.githubusercontent.com/sergiserra/kumo/main/install.sh | bash
+# kumo installer — https://github.com/sergi-learns-devops/kumo
+# Usage: curl -fsSL https://raw.githubusercontent.com/sergi-learns-devops/kumo/main/install.sh | bash
 set -euo pipefail
 
-REPO="sergiserra/kumo"
+REPO="sergi-learns-devops/kumo"
 BINARY="kumo"
 INSTALL_DIR="${KUMO_INSTALL_DIR:-/usr/local/bin}"
 

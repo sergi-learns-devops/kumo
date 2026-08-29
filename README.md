@@ -9,27 +9,27 @@ kumo helps you find the optimal cloud instance type based on your vCPU and RAM r
 ### One-liner (recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sergiserra/kumo/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/sergi-learns-devops/kumo/main/install.sh | bash
 ```
 
 ### Homebrew (macOS/Linux)
 
 ```bash
-brew tap sergiserra/kumo https://github.com/sergiserra/kumo
+brew tap sergi-learns-devops/kumo https://github.com/sergi-learns-devops/kumo
 brew install kumo
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/sergiserra/kumo.git
+git clone https://github.com/sergi-learns-devops/kumo.git
 cd kumo
 make install
 ```
 
 ### Manual download
 
-Download the latest binary from [Releases](https://github.com/sergiserra/kumo/releases):
+Download the latest binary from [Releases](https://github.com/sergi-learns-devops/kumo/releases):
 
 | Platform | File |
 |----------|------|
@@ -57,7 +57,7 @@ rm -rf ~/.kumo
 ### One-liner (same as install)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sergiserra/kumo/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/sergi-learns-devops/kumo/main/install.sh | bash
 ```
 
 The install script detects if kumo is already installed and replaces it with the latest version.
