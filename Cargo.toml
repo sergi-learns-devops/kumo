@@ -1,6 +1,6 @@
 [package]
 name = "kumo"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2021"
 description = "Cloud instance type recommender (GCP, AWS & Azure)"
 license = "MIT"
@@ -13,6 +13,7 @@ ureq = { version = "2.10", default-features = false, features = ["tls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.8"
+miniz_oxide = "0.8"
 
 [profile.release]
 opt-level = "z"

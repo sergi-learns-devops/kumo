@@ -233,6 +233,9 @@ pub fn run_interactive() -> UserRequest {
         db_engine,
         gpu_type,
         gpu_count,
+        spot: false,
+        explain: false,
+        min_network_gbps: None,
     }
 }
 

@@ -7,6 +7,7 @@ mod output;
 mod pricing;
 mod providers;
 mod recommend;
+mod updater;
 mod workloads;
 
 use clap::{CommandFactory, Parser};
@@ -154,6 +155,12 @@ fn main() {
         return;
     }
 
+    // Handle --update
+    if args.update {
+        updater::self_update();
+        return;
+    }
+
     // Handle --list-regions
     if let Some(ref provider) = args.list_regions {
         handle_list_regions(provider);
@@ -241,6 +248,9 @@ fn main() {
             db_engine: None,
             gpu_type: args.gpu_type.clone(),
             gpu_count: args.gpu_count,
+            spot: args.spot,
+            explain: args.explain,
+            min_network_gbps: args.min_network,
         }
     } else if any_data_flag {
         // All args provided — flags mode
@@ -277,10 +287,22 @@ fn main() {
         });
 
         let region_str = args.region.as_deref().or(cfg.defaults.region.as_deref()).unwrap_or("");
-        let region = validate_region(region_str, cloud).unwrap_or_else(|e| {
-            eprintln!("Error: {}", e);
-            std::process::exit(1);
-        });
+        // Multi-region: if comma-separated, validate each; keep raw string for later split
+        let region = if region_str.contains(',') {
+            for r in region_str.split(',') {
+                let r = r.trim();
+                if let Err(e) = validate_region(r, cloud) {
+                    eprintln!("Error: {}", e);
+                    std::process::exit(1);
+                }
+            }
+            region_str.to_string()
+        } else {
+            validate_region(region_str, cloud).unwrap_or_else(|e| {
+                eprintln!("Error: {}", e);
+                std::process::exit(1);
+            })
+        };
 
         let workload_str = args.workload.as_deref().or(cfg.defaults.workload.as_deref()).unwrap_or("general");
         let workload = parse_workload(workload_str).unwrap_or_else(|| {
@@ -318,6 +340,9 @@ fn main() {
             db_engine,
             gpu_type: args.gpu_type,
             gpu_count: args.gpu_count,
+            spot: args.spot,
+            explain: args.explain,
+            min_network_gbps: args.min_network,
         }
     } else {
         // Missing args — interactive mode
@@ -340,6 +365,24 @@ fn main() {
         }
 
         output::display_multicloud(&results, &request, start);
+    } else if request.region.contains(',') {
+        // Multi-region compare: same provider, multiple regions
+        pricing::init_live_pricing(request.cloud);
+        let regions: Vec<String> = request
+            .region
+            .split(',')
+            .map(|r| r.trim().to_string())
+            .collect();
+
+        let mut results = Vec::new();
+        for region in &regions {
+            let mut req = request.clone();
+            req.region = region.clone();
+            let rec = recommend::recommend(&req);
+            results.push((region.clone(), rec));
+        }
+
+        output::display_multiregion(&results, &request, start);
     } else {
         // Single provider mode
         pricing::init_live_pricing(request.cloud);

@@ -106,6 +106,9 @@ pub struct UserRequest {
     pub db_engine: Option<DatabaseEngine>,
     pub gpu_type: Option<String>,
     pub gpu_count: Option<u8>,
+    pub spot: bool,
+    pub explain: bool,
+    pub min_network_gbps: Option<f32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -123,6 +126,7 @@ pub struct InstanceType {
     pub tier: InstanceTier,
     pub cost_hour_usd: f32,
     pub gpu: Option<GpuInfo>,
+    pub network_gbps: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -130,6 +134,19 @@ pub struct GpuInfo {
     pub model: &'static str,
     pub count: u8,
     pub vram_gb: u16,
+}
+
+impl InstanceType {
+    /// Effective network bandwidth in Gbps. If the catalog value is 0 (unknown),
+    /// estimate from vCPU count using the industry ~0.5 Gbps per vCPU heuristic,
+    /// clamped to [0.5, 100].
+    pub fn effective_network_gbps(&self) -> f32 {
+        if self.network_gbps > 0.0 {
+            self.network_gbps
+        } else {
+            (self.vcpus * 0.5).clamp(0.5, 100.0)
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -148,6 +165,36 @@ pub struct ScoredInstance {
     pub delta_vcpu: f32,
     #[allow(dead_code)]
     pub delta_ram: f32,
+    pub breakdown: ScoreBreakdown,
+}
+
+/// Per-component scoring breakdown (for --explain mode)
+#[derive(Debug, Clone, Copy)]
+pub struct ScoreBreakdown {
+    pub cpu_component: f32,
+    pub ram_component: f32,
+    pub cost_component: f32,
+    pub network_component: f32,
+    pub cpu_weight: f32,
+    pub ram_weight: f32,
+    pub cost_weight: f32,
+    pub network_weight: f32,
+}
+
+/// Spot/Preemptible discount rates by provider (approximate averages vs on-demand)
+pub struct SpotRates {
+    pub discount: f32,
+}
+
+pub fn spot_rates(cloud: CloudProvider) -> SpotRates {
+    match cloud {
+        // GCP Spot VMs: ~60-91% off, use ~70% average
+        CloudProvider::Gcp => SpotRates { discount: 0.70 },
+        // AWS Spot: ~70-90% off, use ~70% average
+        CloudProvider::Aws => SpotRates { discount: 0.70 },
+        // Azure Spot: ~60-90% off, use ~65% average
+        CloudProvider::Azure => SpotRates { discount: 0.65 },
+    }
 }
 
 /// Committed use discount rates by provider

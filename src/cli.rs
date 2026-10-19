@@ -19,7 +19,7 @@ pub struct CliArgs {
     #[arg(long = "env", short = 'e')]
     pub env: Option<String>,
 
-    /// Cloud region (e.g., us-central1, eu-west-1, eastus)
+    /// Cloud region(s) — comma-separated for multi-region compare (e.g., us-east-1,eu-west-1)
     #[arg(long = "region")]
     pub region: Option<String>,
 
@@ -58,6 +58,22 @@ pub struct CliArgs {
     /// Generate shell completions (bash, zsh, fish)
     #[arg(long = "completions")]
     pub completions: Option<String>,
+
+    /// Update kumo to the latest version
+    #[arg(long = "update")]
+    pub update: bool,
+
+    /// Show Spot/Preemptible pricing alongside on-demand
+    #[arg(long = "spot")]
+    pub spot: bool,
+
+    /// Explain the scoring breakdown for each recommendation
+    #[arg(long = "explain")]
+    pub explain: bool,
+
+    /// Minimum network bandwidth in Gbps (adds network to scoring)
+    #[arg(long = "min-network")]
+    pub min_network: Option<f32>,
 }
 
 impl CliArgs {

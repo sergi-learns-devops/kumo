@@ -80,6 +80,13 @@ pub fn recommend(request: &UserRequest) -> Recommendation {
         filtered
     };
 
+    // 3c. Filter by minimum network bandwidth if specified
+    let filtered: Vec<&'static InstanceType> = if let Some(min_net) = request.min_network_gbps {
+        filtered.into_iter().filter(|i| i.effective_network_gbps() >= min_net).collect()
+    } else {
+        filtered
+    };
+
     if filtered.is_empty() {
         return Recommendation {
             exact_match: None,
@@ -103,8 +110,22 @@ pub fn recommend(request: &UserRequest) -> Recommendation {
         .map(|i| i.cost_hour_usd)
         .fold(0.0_f32, f32::max);
 
+    let max_net = filtered
+        .iter()
+        .map(|i| i.effective_network_gbps())
+        .fold(0.0_f32, f32::max);
+
     let req_cpu = if request.vcpus > 0.0 { request.vcpus } else { 1.0 };
     let req_ram = if request.ram_gb > 0.0 { request.ram_gb } else { 1.0 };
+
+    // Network-aware weighting: if the user cares about network (min_network set),
+    // give it weight; otherwise keep the classic CPU/RAM/cost split.
+    let network_matters = request.min_network_gbps.is_some();
+    let (w_cpu, w_ram, w_cost, w_net) = if network_matters {
+        (0.30_f32, 0.30, 0.25, 0.15)
+    } else {
+        (0.35_f32, 0.35, 0.30, 0.0)
+    };
 
     let mut scored: Vec<ScoredInstance> = filtered
         .iter()
@@ -119,14 +140,32 @@ pub fn recommend(request: &UserRequest) -> Recommendation {
             } else {
                 0.0
             };
+            // Network: higher bandwidth = better, so reward proximity to the max
+            let net = instance.effective_network_gbps();
+            let net_deficit = if max_net > 0.0 { 1.0 - (net / max_net) } else { 0.0 };
 
-            let score = 1.0 - (0.35 * cpu_diff + 0.35 * ram_diff + 0.30 * normalized_cost);
+            let cpu_component = w_cpu * cpu_diff;
+            let ram_component = w_ram * ram_diff;
+            let cost_component = w_cost * normalized_cost;
+            let network_component = w_net * net_deficit;
+
+            let score = 1.0 - (cpu_component + ram_component + cost_component + network_component);
 
             ScoredInstance {
                 instance,
                 score,
                 delta_vcpu,
                 delta_ram,
+                breakdown: ScoreBreakdown {
+                    cpu_component,
+                    ram_component,
+                    cost_component,
+                    network_component,
+                    cpu_weight: w_cpu,
+                    ram_weight: w_ram,
+                    cost_weight: w_cost,
+                    network_weight: w_net,
+                },
             }
         })
         .collect();
@@ -315,6 +354,9 @@ mod tests {
             db_engine: None,
             gpu_type: None,
             gpu_count: None,
+            spot: false,
+            explain: false,
+            min_network_gbps: None,
         }
     }
 
@@ -622,5 +664,62 @@ mod tests {
         req.db_engine = Some(DatabaseEngine::SqlServer);
         let rec = recommend(&req);
         assert!(rec.notes.iter().any(|n| n.contains("SQL Server") || n.contains("RDS")));
+    }
+
+    #[test]
+    fn test_min_network_filter() {
+        // Request minimum 20 Gbps — should exclude tiny instances
+        let mut req = make_request(CloudProvider::Aws, 32.0, 128.0, Environment::Production);
+        req.min_network_gbps = Some(20.0);
+        let rec = recommend(&req);
+        for scored in &rec.closest_matches {
+            assert!(
+                scored.instance.effective_network_gbps() >= 20.0,
+                "{} has {} Gbps, below 20",
+                scored.instance.name,
+                scored.instance.effective_network_gbps()
+            );
+        }
+    }
+
+    #[test]
+    fn test_network_weight_applied_when_requested() {
+        let mut req = make_request(CloudProvider::Aws, 8.0, 32.0, Environment::Production);
+        req.min_network_gbps = Some(1.0);
+        let rec = recommend(&req);
+        // When network matters, the breakdown should have a non-zero network weight
+        assert!(rec.closest_matches[0].breakdown.network_weight > 0.0);
+    }
+
+    #[test]
+    fn test_network_weight_zero_by_default() {
+        let req = make_request(CloudProvider::Aws, 8.0, 32.0, Environment::Production);
+        let rec = recommend(&req);
+        assert_eq!(rec.closest_matches[0].breakdown.network_weight, 0.0);
+        // Classic weights should sum with cost to 1.0 total
+        let b = &rec.closest_matches[0].breakdown;
+        assert!((b.cpu_weight + b.ram_weight + b.cost_weight - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_effective_network_estimation() {
+        // An instance with 0 catalog bandwidth estimates from vCPUs
+        let req = make_request(CloudProvider::Aws, 8.0, 32.0, Environment::Production);
+        let rec = recommend(&req);
+        for scored in &rec.closest_matches {
+            assert!(scored.instance.effective_network_gbps() > 0.0);
+        }
+    }
+
+    #[test]
+    fn test_breakdown_sums_to_score() {
+        let req = make_request(CloudProvider::Gcp, 4.0, 16.0, Environment::Production);
+        let rec = recommend(&req);
+        for scored in &rec.closest_matches {
+            let b = &scored.breakdown;
+            let total_penalty = b.cpu_component + b.ram_component + b.cost_component + b.network_component;
+            let expected_score = 1.0 - total_penalty;
+            assert!((scored.score - expected_score).abs() < 0.001);
+        }
     }
 }

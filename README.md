@@ -54,13 +54,19 @@ rm -rf ~/.kumo
 
 ## Updating
 
+### Self-update (recommended)
+
+```bash
+kumo --update
+```
+
+Checks GitHub for the latest release and updates the binary in place.
+
 ### One-liner (same as install)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/sergi-learns-devops/kumo/main/install.sh | bash
 ```
-
-The install script detects if kumo is already installed and replaces it with the latest version.
 
 ### Homebrew
 
@@ -111,15 +117,19 @@ kumo -c aws -v 8 -r 32 -e prod --region us-east-1 -w ai
 | `--vcpu` | `-v` | Number of vCPUs (supports decimals) | 0.25-512 |
 | `--ram` | `-r` | RAM in GB | 0.5-12288 |
 | `--env` | `-e` | Target environment | `production`, `pre-production`, `test`, `dev` |
-| `--region` | | Cloud region | `us-central1`, `eu-west-1`, `eastus`, etc. |
+| `--region` | | Cloud region (comma-separated for multi-region compare) | `us-central1`, `eu-west-1,eu-west-2`, etc. |
 | `--family` | `-f` | Filter by instance family | `N2`, `M5`, `Dsv5`, etc. |
 | `--workload` | `-w` | Workload type | `general`, `ai`, `sap`, `hpc`, `database`, `batch`, `storage` |
 | `--service` | | Service type | `vm` (default), `db` |
 | `--engine` | | Database engine (requires `--service db`) | `postgres`, `mysql`, `sqlserver` |
 | `--gpu-type` | | GPU model (for AI workloads) | `T4`, `A10G`, `L4`, `A100`, `H100` |
 | `--gpu-count` | | Minimum number of GPUs | 1-8 |
+| `--spot` | | Show Spot/Preemptible pricing alongside on-demand | |
+| `--explain` | | Show the scoring breakdown per recommendation | |
+| `--min-network` | | Minimum network bandwidth in Gbps (adds network to scoring) | e.g. `10` |
 | `--list-regions` | | List valid regions for a provider | `gcp`, `aws`, `azure` |
 | `--update-catalog` | | Check for pricing updates | |
+| `--update` | | Update kumo to the latest version | |
 | `--completions` | | Generate shell completions | `bash`, `zsh`, `fish` |
 
 ### Workload types
@@ -195,6 +205,41 @@ Compare the best instance across all providers at once:
 ```bash
 kumo --cloud all -v 4 -r 16 -e prod
 kumo --cloud all -v 8 -r 32 -e prod -w ai
+```
+
+### Multi-region compare
+
+Pass a comma-separated list of regions to compare pricing across them (the cheapest is marked):
+
+```bash
+kumo -c aws -v 4 -r 16 -e prod --region us-east-1,eu-west-1,ap-south-1
+kumo -c gcp -v 8 -r 32 -e prod --region us-central1,europe-west1
+```
+
+### Spot / Preemptible pricing
+
+Add `--spot` to see interruptible pricing alongside on-demand (ideal for batch/dev):
+
+```bash
+kumo -c aws -v 8 -r 32 -e dev --region us-east-1 --spot
+```
+
+Approximate discounts: GCP/AWS ~70%, Azure ~65%.
+
+### Explain the scoring
+
+Use `--explain` to see the per-component breakdown (CPU, RAM, cost, network) of each recommendation's score:
+
+```bash
+kumo -c gcp -v 4 -r 16 -e prod --region us-central1 --explain
+```
+
+### Network bandwidth
+
+Filter by minimum network bandwidth in Gbps. When set, network becomes a scoring factor (weights shift to CPU 30% / RAM 30% / cost 25% / network 15%):
+
+```bash
+kumo -c aws -v 16 -r 64 -e prod --region us-east-1 --min-network 10
 ```
 
 ### Config file
@@ -315,8 +360,8 @@ B, Av2 (economy), Dsv5, Dsv4, Esv5, Fsv2, Lsv2, NCasT4v3 (standard)
 | # | Feature | Status |
 |---|---------|--------|
 | 6 | Output structured (`--output json\|csv`) | Planned |
-| 7 | Spot/Preemptible pricing (`--spot`) | Planned |
-| 8 | `--explain` mode — scoring breakdown per recommendation | Planned |
+| 7 | Spot/Preemptible pricing (`--spot`) | ✅ Done |
+| 8 | `--explain` mode — scoring breakdown per recommendation | ✅ Done |
 | 9 | GPU filter (`--gpu-type T4\|A100\|H100`) for AI workloads | ✅ Done |
 | 10 | Terraform/Pulumi snippet (`--emit terraform`) | Planned |
 | 11 | Budget constraint (`--max-cost`) | Planned |
@@ -326,8 +371,8 @@ B, Av2 (economy), Dsv5, Dsv4, Esv5, Fsv2, Lsv2, NCasT4v3 (standard)
 | # | Feature | Status |
 |---|---------|--------|
 | 12 | Kubernetes node sizing (`--k8s`) | Planned |
-| 13 | Multi-region compare (`--region us-east-1,eu-west-1`) | Planned |
-| 14 | Network bandwidth scoring | Planned |
+| 13 | Multi-region compare (`--region us-east-1,eu-west-1`) | ✅ Done |
+| 14 | Network bandwidth scoring (`--min-network`) | ✅ Done |
 | 15 | Compact mode (auto-detect TTY for pipelines) | Planned |
 | 16 | Plugin system (WASM) for custom providers | Planned |
 

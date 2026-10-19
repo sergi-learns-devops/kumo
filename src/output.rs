@@ -1,4 +1,4 @@
-use crate::models::{committed_rates, Environment, Recommendation, ServiceType, UserRequest, WorkloadType, CATALOG_META};
+use crate::models::{committed_rates, spot_rates, Environment, Recommendation, ServiceType, UserRequest, WorkloadType, CATALOG_META};
 use std::env;
 use std::time::Instant;
 
@@ -109,6 +109,12 @@ pub fn display(recommendation: &Recommendation, request: &UserRequest, start: In
     if request.workload != WorkloadType::General && request.service != ServiceType::Database {
         print!(" │ {}{}{}", c.yellow, request.workload, c.reset);
     }
+    if request.spot {
+        print!(" │ {}Spot{}", c.yellow, c.reset);
+    }
+    if let Some(net) = request.min_network_gbps {
+        print!(" │ {}≥{:.0} Gbps{}", c.cyan, net, c.reset);
+    }
     println!();
     println!();
 
@@ -207,6 +213,30 @@ pub fn display(recommendation: &Recommendation, request: &UserRequest, start: In
                 c.green, save_3yr, rates.three_year_discount * 100.0, c.reset,
                 c.reset,
             );
+
+            // Spot pricing line (if --spot)
+            if request.spot {
+                let srates = spot_rates(request.cloud);
+                let spot_monthly = monthly * (1.0 - srates.discount);
+                let spot_hr = first.instance.cost_hour_usd * (1.0 - srates.discount);
+                let spot_label = match request.cloud {
+                    crate::models::CloudProvider::Gcp => "Spot/Preemptible",
+                    _ => "Spot",
+                };
+                println!(
+                    "  {}⚡ {} (#1): {}${:.0}/mo{} {}(${:.4}/hr, −{:.0}%){} {}— interruptible, best for batch/dev{}",
+                    c.dim,
+                    spot_label,
+                    c.yellow, spot_monthly, c.reset,
+                    c.dim, spot_hr, srates.discount * 100.0, c.reset,
+                    c.dim, c.reset,
+                );
+            }
+        }
+
+        // Explain breakdown (if --explain)
+        if request.explain {
+            print_explain(recommendation, c);
         }
     }
 
@@ -245,6 +275,137 @@ pub fn display(recommendation: &Recommendation, request: &UserRequest, start: In
     println!(
         "  {}╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌{}",
         c.dim, c.reset
+    );
+    let time_icon = if emoji { "⚡" } else { "" };
+    let elapsed = start.elapsed();
+    println!(
+        "  {}Done in {:.0}ms {}{}",
+        c.dim, elapsed.as_secs_f64() * 1000.0, time_icon, c.reset
+    );
+    println!();
+}
+
+/// Print the scoring breakdown for each recommendation (--explain mode)
+fn print_explain(recommendation: &Recommendation, c: &Colors) {
+    println!();
+    println!("  {}🔍 Scoring breakdown (score = 1.0 − weighted penalties):{}", c.bold, c.reset);
+    for (i, scored) in recommendation.closest_matches.iter().enumerate() {
+        let b = &scored.breakdown;
+        let pct = (scored.score * 100.0).min(100.0).max(0.0);
+        println!(
+            "  {}#{} {}{}{} → {}{:.0}%{}",
+            c.bold, i + 1, c.cyan, scored.instance.name, c.reset, c.green, pct, c.reset
+        );
+        println!(
+            "      {}CPU  penalty: −{:.3} (weight {:.0}%){}",
+            c.dim, b.cpu_component, b.cpu_weight * 100.0, c.reset
+        );
+        println!(
+            "      {}RAM  penalty: −{:.3} (weight {:.0}%){}",
+            c.dim, b.ram_component, b.ram_weight * 100.0, c.reset
+        );
+        println!(
+            "      {}Cost penalty: −{:.3} (weight {:.0}%){}",
+            c.dim, b.cost_component, b.cost_weight * 100.0, c.reset
+        );
+        if b.network_weight > 0.0 {
+            println!(
+                "      {}Net  penalty: −{:.3} (weight {:.0}%, {:.0} Gbps){}",
+                c.dim, b.network_component, b.network_weight * 100.0,
+                scored.instance.effective_network_gbps(), c.reset
+            );
+        }
+    }
+}
+
+/// Display multi-region comparison (same provider, different regions)
+pub fn display_multiregion(results: &[(String, Recommendation)], request: &UserRequest, start: Instant) {
+    let c = get_colors();
+    let emoji = use_emoji();
+    let cloud_icon = if emoji { "☁" } else { "" };
+
+    println!();
+    println!(
+        "  {}{} kumo{} — {}{}{} {}Multi-region compare{}    {}",
+        c.bold, cloud_icon, c.reset,
+        c.bold, c.cyan, request.cloud, c.reset,
+        c.bold, env_badge(&request.env, c)
+    );
+    println!(
+        "  {}╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌{}",
+        c.dim, c.reset
+    );
+    print!(
+        "  {}Request:{} {}{}{} vCPUs │ {}{:.1}{} GB RAM",
+        c.dim, c.reset, c.bold, fmt_vcpu(request.vcpus), c.reset, c.bold, request.ram_gb, c.reset
+    );
+    if request.workload != WorkloadType::General {
+        print!(" │ {}{}{}", c.yellow, request.workload, c.reset);
+    }
+    println!();
+    println!();
+
+    // Table header
+    println!(
+        "  {}{:<16} {:<24} {:>5} {:>6} {:>12} {:>5}{}",
+        c.dim, "Region", "Instance", "vCPUs", "RAM", "On-Demand", "Score", c.reset
+    );
+    println!("  {}{}{}", c.dim, "─".repeat(74), c.reset);
+
+    // Track cheapest for highlighting
+    let mut cheapest_region = String::new();
+    let mut cheapest_cost = f32::MAX;
+    for (region, rec) in results {
+        if let Some(best) = rec.closest_matches.first() {
+            let m = best.instance.cost_hour_usd * 730.0;
+            if m < cheapest_cost {
+                cheapest_cost = m;
+                cheapest_region = region.clone();
+            }
+        }
+    }
+
+    for (region, rec) in results {
+        if let Some(best) = rec.closest_matches.first() {
+            let inst = best.instance;
+            let monthly = inst.cost_hour_usd * 730.0;
+            let pct = (best.score * 100.0).min(100.0).max(0.0);
+            let score_color = if pct >= 80.0 { c.green } else if pct >= 50.0 { c.yellow } else { c.dim };
+            let cheapest_marker = if *region == cheapest_region {
+                if emoji { " 💰" } else { " *" }
+            } else { "" };
+
+            println!(
+                "  {}{:<16}{} {}{:<24}{} {:>5} {:>4} GB {:>12} {}{:>4.0}%{}{}",
+                c.bold, region, c.reset,
+                c.cyan, inst.name, c.reset,
+                fmt_vcpu(inst.vcpus),
+                inst.ram_gb as u32,
+                format!("${:.0}/mo", monthly),
+                score_color, pct, c.reset,
+                cheapest_marker,
+            );
+        } else {
+            println!("  {}{:<16}{} {}No match found{}", c.bold, region, c.reset, c.dim, c.reset);
+        }
+    }
+
+    println!("  {}{}{}", c.dim, "─".repeat(74), c.reset);
+    if !cheapest_region.is_empty() {
+        println!(
+            "  {}💰 Cheapest region: {}{} (${:.0}/mo){}",
+            c.dim, c.green, cheapest_region, cheapest_cost, c.reset
+        );
+    }
+
+    println!(
+        "  {}╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌{}",
+        c.dim, c.reset
+    );
+    let warn_icon = if emoji { "⚠" } else { "(!)" };
+    println!(
+        "  {}  {}Prices from {} · regional pricing may vary{}",
+        warn_icon, c.dim, CATALOG_META.last_updated, c.reset
     );
     let time_icon = if emoji { "⚡" } else { "" };
     let elapsed = start.elapsed();
