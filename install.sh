@@ -6,6 +6,14 @@ set -euo pipefail
 REPO="sergi-learns-devops/kumo"
 BINARY="kumo"
 
+# Temp dir (global so the EXIT trap can clean it up safely under `set -u`)
+TMP_DIR=""
+cleanup() {
+    [ -n "${TMP_DIR:-}" ] && rm -rf "${TMP_DIR}"
+    return 0
+}
+trap cleanup EXIT
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -88,7 +96,7 @@ get_latest_version() {
 
 # Download and install
 install() {
-    local platform version download_url tmp_dir install_dir
+    local platform version download_url install_dir
 
     info "☁  kumo installer"
     echo ""
@@ -113,27 +121,26 @@ install() {
 
     download_url="https://github.com/${REPO}/releases/download/v${version}/${BINARY}-${platform}.tar.gz"
 
-    tmp_dir=$(mktemp -d)
-    trap 'rm -rf "$tmp_dir"' EXIT
+    TMP_DIR=$(mktemp -d)
 
     info "  Downloading..."
     if command -v curl &>/dev/null; then
-        curl -fsSL "$download_url" -o "${tmp_dir}/${BINARY}.tar.gz" 2>/dev/null
+        curl -fsSL "$download_url" -o "${TMP_DIR}/${BINARY}.tar.gz" 2>/dev/null
     else
-        wget -q "$download_url" -O "${tmp_dir}/${BINARY}.tar.gz" 2>/dev/null
+        wget -q "$download_url" -O "${TMP_DIR}/${BINARY}.tar.gz" 2>/dev/null
     fi
 
-    if [ ! -f "${tmp_dir}/${BINARY}.tar.gz" ]; then
+    if [ ! -f "${TMP_DIR}/${BINARY}.tar.gz" ]; then
         info "  Pre-built binary not available. Building from source..."
         install_from_source "$install_dir"
         return
     fi
 
     info "  Extracting..."
-    tar -xzf "${tmp_dir}/${BINARY}.tar.gz" -C "${tmp_dir}"
+    tar -xzf "${TMP_DIR}/${BINARY}.tar.gz" -C "${TMP_DIR}"
 
     info "  Installing to ${install_dir}..."
-    mv "${tmp_dir}/${BINARY}" "${install_dir}/${BINARY}"
+    mv "${TMP_DIR}/${BINARY}" "${install_dir}/${BINARY}"
     chmod +x "${install_dir}/${BINARY}"
 
     echo ""
@@ -153,17 +160,15 @@ install_from_source() {
 
     info "  Building from source (this may take a minute)..."
 
-    local src_dir
-    src_dir=$(mktemp -d)
-    trap 'rm -rf "$src_dir"' EXIT
+    TMP_DIR=$(mktemp -d)
 
     if command -v git &>/dev/null; then
-        git clone --depth 1 "https://github.com/${REPO}.git" "$src_dir" 2>/dev/null
+        git clone --depth 1 "https://github.com/${REPO}.git" "$TMP_DIR" 2>/dev/null
     else
         error "git not found. Install git and retry."
     fi
 
-    cd "$src_dir"
+    cd "$TMP_DIR"
     cargo build --release --quiet
 
     cp "target/release/${BINARY}" "${install_dir}/${BINARY}"
