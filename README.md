@@ -12,6 +12,10 @@ kumo helps you find the optimal cloud instance type based on your vCPU and RAM r
 curl -fsSL https://raw.githubusercontent.com/sergi-learns-devops/kumo/main/install.sh | bash
 ```
 
+Installs to `/usr/local/bin` when writable, otherwise falls back to `~/.local/bin`
+(no `sudo` required). Set `KUMO_INSTALL_DIR` to choose a custom location. Installing
+to a user-owned directory means `kumo --update` works without `sudo`.
+
 ### Homebrew (macOS/Linux)
 
 ```bash

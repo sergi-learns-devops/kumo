@@ -16,6 +16,12 @@ pub fn self_update() {
         }
     };
 
+    // Validate tag format (defense-in-depth before using it in a URL)
+    if !is_valid_tag(&latest) {
+        eprintln!("  \x1b[31mError: unexpected release tag format '{}'\x1b[0m", latest);
+        std::process::exit(1);
+    }
+
     // 2. Compare versions
     if latest.trim_start_matches('v') == CURRENT_VERSION {
         eprintln!("  \x1b[32m✓ Already up to date (v{})\x1b[0m", CURRENT_VERSION);
@@ -48,6 +54,35 @@ pub fn self_update() {
         }
     };
 
+    // 4b. Verify SHA256 checksum against the published .sha256 (integrity check)
+    let checksum_url = format!(
+        "https://github.com/{}/releases/download/{}/kumo-{}.sha256",
+        REPO, latest, platform
+    );
+    match download_text(&checksum_url) {
+        Ok(expected_line) => {
+            // The .sha256 file format is: "<hex>  <filename>"
+            let expected = expected_line
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_lowercase();
+            let actual = sha256_hex(&tar_gz);
+            if expected.is_empty() || expected != actual {
+                eprintln!("  \x1b[31mError: checksum verification failed.\x1b[0m");
+                eprintln!("  \x1b[2m  expected: {}\x1b[0m", expected);
+                eprintln!("  \x1b[2m  actual:   {}\x1b[0m", actual);
+                eprintln!("  Aborting update — the download may be corrupt or tampered with.");
+                std::process::exit(1);
+            }
+            eprintln!("  \x1b[2m✓ Checksum verified\x1b[0m");
+        }
+        Err(_) => {
+            // Checksum file not available — warn but continue (older releases)
+            eprintln!("  \x1b[33m⚠ Checksum file not found; skipping integrity check.\x1b[0m");
+        }
+    }
+
     // 5. Extract the binary from tar.gz
     let new_binary = match extract_tar_gz(&tar_gz) {
         Ok(data) => data,
@@ -77,7 +112,7 @@ pub fn self_update() {
 
     if let Err(e) = fs::write(&tmp_path, &new_binary) {
         eprintln!("  \x1b[31mError writing update: {}\x1b[0m", e);
-        eprintln!("  You may need to run with sudo: sudo kumo --update");
+        print_permission_help(&actual_path);
         let _ = fs::remove_file(&tmp_path);
         std::process::exit(1);
     }
@@ -92,7 +127,7 @@ pub fn self_update() {
     // Rename tmp to actual (atomic on same filesystem)
     if let Err(e) = fs::rename(&tmp_path, &actual_path) {
         eprintln!("  \x1b[31mError replacing binary: {}\x1b[0m", e);
-        eprintln!("  You may need to run with sudo: sudo kumo --update");
+        print_permission_help(&actual_path);
         let _ = fs::remove_file(&tmp_path);
         std::process::exit(1);
     }
@@ -101,6 +136,19 @@ pub fn self_update() {
         "  \x1b[32m✓ Updated to v{}! Run 'kumo --version' to verify.\x1b[0m",
         latest.trim_start_matches('v')
     );
+}
+
+/// Show helpful guidance when the update fails due to insufficient permissions
+fn print_permission_help(path: &std::path::Path) {
+    eprintln!(
+        "  \x1b[2mkumo is installed at {} which you don't have permission to write.\x1b[0m",
+        path.display()
+    );
+    eprintln!("  \x1b[2mOptions:\x1b[0m");
+    eprintln!("  \x1b[2m  1. Update with elevated permissions:  sudo kumo --update\x1b[0m");
+    eprintln!("  \x1b[2m  2. Reinstall to a user-owned directory (no sudo needed next time):\x1b[0m");
+    eprintln!("  \x1b[2m       curl -fsSL https://raw.githubusercontent.com/{}/main/install.sh | bash\x1b[0m", REPO);
+    eprintln!("  \x1b[2m     The installer places kumo in ~/.local/bin when /usr/local/bin needs root.\x1b[0m");
 }
 
 fn get_latest_version() -> Result<String, String> {
@@ -161,6 +209,38 @@ fn download_binary(url: &str) -> Result<Vec<u8>, String> {
     Ok(buf)
 }
 
+/// Download a small text file (e.g. a .sha256 checksum)
+fn download_text(url: &str) -> Result<String, String> {
+    let response = ureq::get(url)
+        .timeout(std::time::Duration::from_secs(10))
+        .call()
+        .map_err(|e| format!("Download failed: {}", e))?;
+
+    let mut buf = String::new();
+    response
+        .into_reader()
+        .take(4096) // checksum files are tiny
+        .read_to_string(&mut buf)
+        .map_err(|e| format!("Failed to read checksum: {}", e))?;
+
+    Ok(buf)
+}
+
+/// Compute the SHA256 of data as a lowercase hex string (uses ring, already a dep)
+fn sha256_hex(data: &[u8]) -> String {
+    let digest = ring::digest::digest(&ring::digest::SHA256, data);
+    digest.as_ref().iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+/// Validate that a release tag looks like a version (e.g. "v0.5.1" or "0.5.1").
+/// Defense-in-depth: the tag is interpolated into download URLs.
+fn is_valid_tag(tag: &str) -> bool {
+    let body = tag.strip_prefix('v').unwrap_or(tag);
+    !body.is_empty()
+        && body.len() <= 20
+        && body.chars().all(|c| c.is_ascii_digit() || c == '.')
+}
+
 fn extract_tar_gz(data: &[u8]) -> Result<Vec<u8>, String> {
     use std::io::Cursor;
 
@@ -189,13 +269,18 @@ fn extract_tar_gz(data: &[u8]) -> Result<Vec<u8>, String> {
         let name_end = header[..100].iter().position(|&b| b == 0).unwrap_or(100);
         let name = String::from_utf8_lossy(&header[..name_end]);
 
+        // Typeflag is at offset 156: '0' or '\0' means a regular file
+        let typeflag = header[156];
+        let is_regular_file = typeflag == b'0' || typeflag == 0;
+
         // Get file size from header (octal, bytes 124-135)
         let size_str = String::from_utf8_lossy(&header[124..136]);
         let size = usize::from_str_radix(size_str.trim().trim_matches('\0'), 8).unwrap_or(0);
 
         offset += 512; // Move past header
 
-        if name.contains("kumo") && size > 0 {
+        // Strict match: the archive packs the binary as exactly "kumo"
+        if name == "kumo" && is_regular_file && size > 0 {
             if offset + size <= tar_data.len() {
                 return Ok(tar_data[offset..offset + size].to_vec());
             }

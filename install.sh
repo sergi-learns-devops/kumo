@@ -5,18 +5,55 @@ set -euo pipefail
 
 REPO="sergi-learns-devops/kumo"
 BINARY="kumo"
-INSTALL_DIR="${KUMO_INSTALL_DIR:-/usr/local/bin}"
 
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
+YELLOW='\033[0;33m'
 DIM='\033[2m'
 RESET='\033[0m'
 
 info() { echo -e "${CYAN}$1${RESET}"; }
 success() { echo -e "${GREEN}$1${RESET}"; }
+warn() { echo -e "${YELLOW}$1${RESET}"; }
 error() { echo -e "${RED}Error: $1${RESET}" >&2; exit 1; }
+
+# Choose an install directory that the current user can write to (no sudo).
+# Priority:
+#   1. $KUMO_INSTALL_DIR if set
+#   2. /usr/local/bin if writable without sudo
+#   3. ~/.local/bin (created if needed) — the standard user-local location
+choose_install_dir() {
+    if [ -n "${KUMO_INSTALL_DIR:-}" ]; then
+        echo "$KUMO_INSTALL_DIR"
+        return
+    fi
+
+    if [ -w "/usr/local/bin" ]; then
+        echo "/usr/local/bin"
+        return
+    fi
+
+    echo "${HOME}/.local/bin"
+}
+
+# Warn if the install dir is not on PATH and tell the user how to fix it
+check_path() {
+    local dir="$1"
+    case ":${PATH}:" in
+        *":${dir}:"*)
+            : # already on PATH
+            ;;
+        *)
+            echo ""
+            warn "  ⚠ ${dir} is not on your PATH."
+            echo -e "  ${DIM}Add this line to your shell profile (~/.zshrc, ~/.bashrc):${RESET}"
+            echo -e "  ${DIM}  export PATH=\"${dir}:\$PATH\"${RESET}"
+            echo -e "  ${DIM}Then restart your terminal or run: source ~/.zshrc${RESET}"
+            ;;
+    esac
+}
 
 # Detect OS and architecture
 detect_platform() {
@@ -51,19 +88,23 @@ get_latest_version() {
 
 # Download and install
 install() {
-    local platform version download_url tmp_dir
+    local platform version download_url tmp_dir install_dir
 
     info "☁  kumo installer"
     echo ""
 
     platform=$(detect_platform)
+    install_dir=$(choose_install_dir)
+    mkdir -p "$install_dir"
+
     info "  Platform: ${platform}"
+    info "  Install dir: ${install_dir}"
 
     version=$(get_latest_version 2>/dev/null || echo "")
 
     if [ -z "$version" ]; then
         info "  Could not fetch latest release. Building from source..."
-        install_from_source
+        install_from_source "$install_dir"
         return
     fi
 
@@ -84,29 +125,28 @@ install() {
 
     if [ ! -f "${tmp_dir}/${BINARY}.tar.gz" ]; then
         info "  Pre-built binary not available. Building from source..."
-        install_from_source
+        install_from_source "$install_dir"
         return
     fi
 
     info "  Extracting..."
     tar -xzf "${tmp_dir}/${BINARY}.tar.gz" -C "${tmp_dir}"
 
-    info "  Installing to ${INSTALL_DIR}..."
-    if [ -w "$INSTALL_DIR" ]; then
-        mv "${tmp_dir}/${BINARY}" "${INSTALL_DIR}/${BINARY}"
-    else
-        sudo mv "${tmp_dir}/${BINARY}" "${INSTALL_DIR}/${BINARY}"
-    fi
-    chmod +x "${INSTALL_DIR}/${BINARY}"
+    info "  Installing to ${install_dir}..."
+    mv "${tmp_dir}/${BINARY}" "${install_dir}/${BINARY}"
+    chmod +x "${install_dir}/${BINARY}"
 
     echo ""
-    success "  ✓ kumo v${version} installed to ${INSTALL_DIR}/${BINARY}"
+    success "  ✓ kumo v${version} installed to ${install_dir}/${BINARY}"
+    check_path "$install_dir"
     echo -e "  ${DIM}Run 'kumo --help' to get started${RESET}"
     echo ""
 }
 
 # Fallback: build from source
 install_from_source() {
+    local install_dir="$1"
+
     if ! command -v cargo &>/dev/null; then
         error "Rust toolchain not found. Install it from https://rustup.rs and retry."
     fi
@@ -126,15 +166,12 @@ install_from_source() {
     cd "$src_dir"
     cargo build --release --quiet
 
-    if [ -w "$INSTALL_DIR" ]; then
-        cp "target/release/${BINARY}" "${INSTALL_DIR}/${BINARY}"
-    else
-        sudo cp "target/release/${BINARY}" "${INSTALL_DIR}/${BINARY}"
-    fi
-    chmod +x "${INSTALL_DIR}/${BINARY}"
+    cp "target/release/${BINARY}" "${install_dir}/${BINARY}"
+    chmod +x "${install_dir}/${BINARY}"
 
     echo ""
-    success "  ✓ kumo installed from source to ${INSTALL_DIR}/${BINARY}"
+    success "  ✓ kumo installed from source to ${install_dir}/${BINARY}"
+    check_path "$install_dir"
     echo -e "  ${DIM}Run 'kumo --help' to get started${RESET}"
     echo ""
 }
